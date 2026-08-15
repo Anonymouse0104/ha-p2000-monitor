@@ -1,7 +1,7 @@
 {
   "domain": "p2000_monitor",
   "name": "P2000 Monitor",
-  \g<1>0.4.6\g<2>,
+  "version": "0.4.6",
   "documentation": "https://github.com/Anonymouse0104/ha-p2000-monitor",
   "requirements": [
     "feedparser==6.0.11"
