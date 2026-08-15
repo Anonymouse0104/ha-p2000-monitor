@@ -12,15 +12,29 @@ _EVENT_HANDLER = re.compile(
     flags=re.I,
 )
 
+# P2KFlex can return the beginning of a tooltip element inside the message
+# cell without the closing '>' of the HTML tag. A normal HTML-tag regex cannot
+# remove that fragment, so stop at the first UI tag before stripping markup.
+_UI_TAG = re.compile(
+    r"<\s*(?:span|div|script|style|a|img|button|input|label|table|td|tr)\b",
+    flags=re.I,
+)
+
 
 def clean_visible_text(value: str) -> str:
-    """Extract visible P2KFlex message text without JavaScript/HTML leakage."""
+    """Extract visible P2KFlex message text without HTML/JavaScript leakage."""
     text = unescape(str(value or ""))
 
     # P2KFlex can flatten a tooltip's event-handler attribute into the message
     # cell. Everything from that handler onward belongs to the page UI, not
     # to the P2000 message itself.
     text = _EVENT_HANDLER.split(text, maxsplit=1)[0]
+
+    # Some responses contain an incomplete UI tag such as '<span class="TIP'
+    # without a closing '>'. Truncate before that UI fragment as well.
+    ui_tag = _UI_TAG.search(text)
+    if ui_tag:
+        text = text[:ui_tag.start()]
 
     text = re.sub(
         r"\bhref\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)",
@@ -43,7 +57,7 @@ def clean_visible_text(value: str) -> str:
     text = re.sub(r"<br\s*/?>", " ", text, flags=re.I)
     text = re.sub(r"<[^>]+>", " ", text)
 
-    # Remove the JavaScript punctuation left immediately before the handler.
+    # Remove JavaScript punctuation left immediately before the handler.
     text = re.sub(r"[\s\"'();]+$", "", text)
 
     return re.sub(r"\s+", " ", text).strip()
