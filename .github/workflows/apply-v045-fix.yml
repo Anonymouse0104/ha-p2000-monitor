@@ -2,25 +2,26 @@ name: Apply v0.4.5 P2KFlex fix
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   apply-fix:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Patch integration
-        shell: python
+      - name: Patch files
         run: |
+          python3 - <<'PY'
           from pathlib import Path
 
-          coordinator = Path("custom_components/p2000_monitor/coordinator.py")
-          text = coordinator.read_text(encoding="utf-8")
+          coordinator = Path('custom_components/p2000_monitor/coordinator.py')
+          text = coordinator.read_text(encoding='utf-8')
 
           old = '''        cell_class = msg_match.group(1).lower()
         if "msgbrw" in cell_class:
@@ -47,7 +48,7 @@ jobs:
             discipline = ""
 '''
           if old not in text:
-              raise SystemExit("Discipline parser block not found")
+              raise SystemExit('Discipline parser block not found')
           text = text.replace(old, new, 1)
 
           old = '''                results = await asyncio.gather(
@@ -58,9 +59,9 @@ jobs:
                     return_exceptions=True,
                 )
 '''
-          new = '''                # Do not request both P2KFlex regions concurrently.
-                # P2KFlex uses the same mobile session/cookie and concurrent
-                # engine requests can return stale/mixed result sets.
+          new = '''                # P2KFlex uses the same mobile session/cookie for the
+                # engine endpoint. Sequential requests prevent stale/mixed
+                # result sets observed with concurrent region requests.
                 results = []
                 for region in P2KFLEX_REGIONS:
                     try:
@@ -71,7 +72,7 @@ jobs:
                         results.append(err)
 '''
           if old not in text:
-              raise SystemExit("Concurrent P2KFlex polling block not found")
+              raise SystemExit('Concurrent polling block not found')
           text = text.replace(old, new, 1)
 
           old = '''            for region, result in zip(P2KFLEX_REGIONS, results):
@@ -101,7 +102,7 @@ jobs:
                         normalized_messages.append(message)
 '''
           if old not in text:
-              raise SystemExit("P2KFlex result processing block not found")
+              raise SystemExit('Result processing block not found')
           text = text.replace(old, new, 1)
 
           old = '''                self._remember_message_id(message_id)
@@ -122,29 +123,21 @@ jobs:
             incident_changes = self._process_live_batch(live_new)
 '''
           if old not in text:
-              raise SystemExit("Live message block not found")
+              raise SystemExit('Live message block not found')
           text = text.replace(old, new, 1)
+          coordinator.write_text(text, encoding='utf-8')
 
-          coordinator.write_text(text, encoding="utf-8")
-
-          manifest = Path("custom_components/p2000_monitor/manifest.json")
-          m = manifest.read_text(encoding="utf-8")
+          manifest = Path('custom_components/p2000_monitor/manifest.json')
+          m = manifest.read_text(encoding='utf-8')
           if '"version": "0.4.4"' not in m:
-              raise SystemExit("manifest is not at v0.4.4")
-          m = m.replace('"version": "0.4.4"', '"version": "0.4.5"', 1)
-          manifest.write_text(m, encoding="utf-8")
+              raise SystemExit('manifest is not v0.4.4')
+          manifest.write_text(m.replace('"version": "0.4.4"', '"version": "0.4.5"', 1), encoding='utf-8')
+          PY
 
-      - name: Commit changes
+      - name: Commit patch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add custom_components/p2000_monitor/coordinator.py custom_components/p2000_monitor/manifest.json
-          git commit -m "Fix sequential P2KFlex polling and normalize disciplines"
-          git push
-
-      - name: Remove temporary workflow
-        if: always()
-        run: |
-          git rm .github/workflows/apply-v045-fix.yml
-          git commit -m "Remove temporary v0.4.5 patch workflow"
+          git commit -m "Fix P2KFlex polling and discipline normalization"
           git push
