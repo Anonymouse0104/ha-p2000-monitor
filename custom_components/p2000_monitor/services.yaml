@@ -1,0 +1,51 @@
+inject_test_incident:
+  name: Injecteer testincident
+  description: >
+    Injecteert een gesimuleerd P2000-incident in de normale
+    verwerkingsketen van P2000 Monitor.
+
+  fields:
+    region:
+      name: Regio
+      description: P2000-regionummer.
+      required: true
+      default: "24"
+      selector:
+        text:
+
+    region_name:
+      name: Regionaam
+      description: Naam van de veiligheidsregio.
+      required: true
+      default: "Limburg Zuid"
+      selector:
+        text:
+
+    discipline:
+      name: Discipline
+      description: P2000-discipline.
+      required: true
+      default: "Brandweerdiensten"
+      selector:
+        text:
+
+    message:
+      name: Melding
+      description: De gesimuleerde P2000-melding.
+      required: true
+      default: "P 1 BR woning Teststraat Maastricht 243231"
+      selector:
+        text:
+
+    capcodes:
+      name: Capcodes
+      description: >
+        Lijst met capcodes die voor hetzelfde incident
+        worden gealarmeerd.
+      required: true
+      default:
+        - "1005258"
+        - "1005264"
+        - "1005998"
+      selector:
+        object:
