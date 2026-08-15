@@ -45,7 +45,7 @@ def _discipline(cell_class: str) -> str:
     return ""
 
 
-def _parse_p2kflex_html(html: str, region: str) -> list[dict]:
+def _parse_p2kflex_html(html: str, region: str | None = None) -> list[dict]:
     """Parse the visible P2KFlex mobile table."""
     rows = re.findall(r"<tr\b[^>]*>(.*?)</tr>", html, flags=re.I | re.S)
     messages: list[dict] = []
@@ -99,6 +99,52 @@ def _parse_p2kflex_html(html: str, region: str) -> list[dict]:
 
         city_match = re.search(r'data-cityname=["\']([^"\']+)["\']', row, flags=re.I)
         city = unescape(city_match.group(1)).strip() if city_match else ""
+
+        # A combined P2KFlex request contains both Limburg regions.
+        # Prefer an explicit region marker when P2KFlex provides one.
+        row_region = re.search(
+            r'data-(?:regio|region|regionid|region-id)=["\'](\d{2,3})["\']',
+            row,
+            flags=re.I,
+        )
+        parsed_region = None
+        if row_region:
+            raw_region = row_region.group(1)
+            parsed_region = raw_region[:2] if len(raw_region) == 3 else raw_region
+
+        row_lower = row.lower()
+        if not parsed_region:
+            if "brandweer limburg-noord" in row_lower or "veiligheidsregio limburg-noord" in row_lower:
+                parsed_region = "23"
+            elif "brandweer zuid-limburg" in row_lower or "veiligheidsregio zuid-limburg" in row_lower:
+                parsed_region = "24"
+
+        if not parsed_region:
+            city_key = city.lower().strip()
+            north_cities = {
+                "beesel", "bergen", "echt-susteren", "gennep", "horst aan de maas",
+                "leudal", "maasgouw", "mook en middelaar", "nederweert",
+                "peel en maas", "roerdalen", "roermond", "venlo", "venray", "weert",
+            }
+            south_cities = {
+                "beek", "beekdaelen", "brunssum", "eijsden-margraten", "gulpen-wittem",
+                "heerlen", "kerkrade", "landgraaf", "maastricht", "meerssen",
+                "sittard-geleen", "stein", "vaals", "valkenburg aan de geul", "voerendaal",
+                "simpeleveld",
+            }
+            if city_key in north_cities:
+                parsed_region = "23"
+            elif city_key in south_cities:
+                parsed_region = "24"
+
+        if not parsed_region:
+            parsed_region = region
+
+        if not parsed_region:
+            _LOGGER.warning("P2KFlex: regio niet kunnen bepalen voor %s", message)
+            continue
+
+        region = str(parsed_region)
 
         item = {
             "message": message,
@@ -357,21 +403,31 @@ class P2000DataCoordinator(DataUpdateCoordinator):
         data["incidents"] = self._current_incidents()
         self.async_set_updated_data(data)
 
-    async def _fetch_p2kflex_region(self, session, region):
-        """Fetch one Limburg region from P2KFlex."""
+    async def _fetch_p2kflex(self, session):
+        """Fetch both Limburg regions in the same P2KFlex engine request."""
         sid_cookie = session.cookie_jar.filter_cookies(P2KFLEX_INDEX_URL).get("fp_sid")
         sid = sid_cookie.value if sid_cookie else uuid.uuid4().hex[:24]
         params = {
-            "id": "0", "rt": "1", "sid": sid, "classic": "0",
+            "id": "0",
+            "rt": "1",
+            "sid": sid,
+            "classic": "0",
             "date": datetime.now().astimezone().strftime("%a %b %d %Y %H:%M:%S GMT%z"),
-            "regio": f"{region}2;", "capcode": "none", "city": "0",
-            "include": "none", "exclude": "none",
+            "regio": "232;242;",
+            "capcode": "none",
+            "city": "0",
+            "include": "none",
+            "exclude": "none",
         }
-        async with session.get(P2KFLEX_URL, params=params, timeout=aiohttp.ClientTimeout(total=P2KFLEX_TIMEOUT)) as response:
+        async with session.get(
+            P2KFLEX_URL,
+            params=params,
+            timeout=aiohttp.ClientTimeout(total=P2KFLEX_TIMEOUT),
+        ) as response:
             response.raise_for_status()
             html = await response.text(errors="replace")
-        messages = _parse_p2kflex_html(html, region)
-        _LOGGER.debug("P2KFlex regio %s: %s berichten ontvangen", region, len(messages))
+        messages = _parse_p2kflex_html(html, None)
+        _LOGGER.info("P2KFlex gecombineerd: %s berichten ontvangen", len(messages))
         return messages
 
     async def _async_update_data(self):
@@ -386,42 +442,38 @@ class P2000DataCoordinator(DataUpdateCoordinator):
             }
             async with aiohttp.ClientSession(headers=headers) as session:
                 try:
-                    async with session.get(P2KFLEX_INDEX_URL, timeout=aiohttp.ClientTimeout(total=P2KFLEX_TIMEOUT)) as response:
+                    async with session.get(
+                        P2KFLEX_INDEX_URL,
+                        timeout=aiohttp.ClientTimeout(total=P2KFLEX_TIMEOUT),
+                    ) as response:
                         await response.read()
                 except Exception as err:
                     _LOGGER.debug("P2KFlex index initialisatie mislukt: %s", err)
 
-                # P2KFlex uses the same mobile session/cookie for the engine.
-                # Sequential requests prevent stale or mixed result sets seen
-                # with concurrent region requests.
-                results = []
-                for region in P2KFLEX_REGIONS:
-                    try:
-                        results.append(await self._fetch_p2kflex_region(session, region))
-                    except Exception as err:
-                        _LOGGER.warning("P2KFlex regio %s ophalen mislukt: %s", region, err)
-                        results.append(err)
+                messages = await self._fetch_p2kflex(session)
 
-            messages: list[dict] = []
-            errors = []
-            for region, result in zip(P2KFLEX_REGIONS, results):
-                if isinstance(result, Exception):
-                    errors.append(f"regio {region}: {result}")
-                    continue
-                _LOGGER.debug("P2KFlex regio %s: %s berichten verwerkt", region, len(result))
-                messages.extend(message for message in result if not self._is_excluded(message))
-
-            if errors and not messages:
-                raise UpdateFailed("P2KFlex gaf geen bruikbare data terug: " + "; ".join(errors))
-
-            messages.sort(key=lambda item: self._parse_published(item.get("published")) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+            messages = [
+                message
+                for message in messages
+                if not self._is_excluded(message)
+            ]
+            messages.sort(
+                key=lambda item: self._parse_published(item.get("published"))
+                or datetime.min.replace(tzinfo=timezone.utc),
+                reverse=True,
+            )
             latest = messages[0] if messages else None
 
             if not self._initialized:
                 for message in messages:
                     self._remember_message_id(message["message_id"])
                 self._initialized = True
-                return {"latest": latest, "new_messages": [], "incident_changes": [], "incidents": self._current_incidents()}
+                return {
+                    "latest": latest,
+                    "new_messages": [],
+                    "incident_changes": [],
+                    "incidents": self._current_incidents(),
+                }
 
             now = datetime.now(timezone.utc)
             live_horizon = max(self.incident_window, 900)
@@ -438,15 +490,23 @@ class P2000DataCoordinator(DataUpdateCoordinator):
                 self._remember_message_id(message_id)
                 live_new.append(message)
                 _LOGGER.info(
-                    "P2KFlex nieuwe melding: %s | %s | %s | %s",
-                    message.get("published", ""), message.get("discipline", ""),
-                    message.get("city", ""), message.get("message", ""),
+                    "P2KFlex nieuwe melding: %s | %s | %s | %s | regio %s",
+                    message.get("published", ""),
+                    message.get("discipline", ""),
+                    message.get("city", ""),
+                    message.get("message", ""),
+                    message.get("regio", ""),
                 )
 
             incident_changes = self._process_live_batch(live_new)
             if incident_changes:
                 await self.async_save_incident_history()
-            return {"latest": latest, "new_messages": live_new, "incident_changes": incident_changes, "incidents": self._current_incidents()}
+            return {
+                "latest": latest,
+                "new_messages": live_new,
+                "incident_changes": incident_changes,
+                "incidents": self._current_incidents(),
+            }
         except UpdateFailed:
             raise
         except Exception as err:
