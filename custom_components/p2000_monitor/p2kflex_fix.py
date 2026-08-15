@@ -38,9 +38,10 @@ def stable_message_id(data: dict) -> str:
 
 
 def apply_patch() -> None:
-    """Patch coordinator message-ID generation with the stable algorithm."""
+    """Patch coordinator HTML cleaning and message-ID generation."""
     from . import coordinator
 
+    coordinator._strip_html = clean_visible_text
     coordinator.P2000DataCoordinator._generate_message_id = staticmethod(
         stable_message_id
     )
