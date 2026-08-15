@@ -128,9 +128,9 @@ def _parse_p2kflex_html(html: str, region: str | None = None) -> list[dict]:
             }
             south_cities = {
                 "beek", "beekdaelen", "brunssum", "eijsden-margraten", "gulpen-wittem",
-                "heerlen", "kerkrade", "landgraaf", "maastricht", "meerssen",
+                "heerlen", "hoensbroek", "heerlerheide", "welten", "kerkrade", "landgraaf", "maastricht", "meerssen",
                 "sittard-geleen", "stein", "vaals", "valkenburg aan de geul", "voerendaal",
-                "simpeleveld",
+                "simpelveld",
             }
             if city_key in north_cities:
                 parsed_region = "23"
