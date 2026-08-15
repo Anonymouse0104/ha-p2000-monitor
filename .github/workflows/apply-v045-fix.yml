@@ -1,0 +1,150 @@
+name: Apply v0.4.5 P2KFlex fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch integration
+        shell: python
+        run: |
+          from pathlib import Path
+
+          coordinator = Path("custom_components/p2000_monitor/coordinator.py")
+          text = coordinator.read_text(encoding="utf-8")
+
+          old = '''        cell_class = msg_match.group(1).lower()
+        if "msgbrw" in cell_class:
+            discipline = "Brandweer"
+        elif "msgamb" in cell_class:
+            discipline = "Ambulance"
+        elif "msgpol" in cell_class:
+            discipline = "Politie"
+        elif "msginc" in cell_class:
+            discipline = "Incident"
+        else:
+            discipline = ""
+'''
+          new = '''        cell_class = msg_match.group(1).lower()
+        if "msgbrw" in cell_class:
+            discipline = "Brandweerdiensten"
+        elif "msgamb" in cell_class:
+            discipline = "Ambulancediensten"
+        elif "msgpol" in cell_class:
+            discipline = "Politiediensten"
+        elif "msginc" in cell_class:
+            discipline = "Incident"
+        else:
+            discipline = ""
+'''
+          if old not in text:
+              raise SystemExit("Discipline parser block not found")
+          text = text.replace(old, new, 1)
+
+          old = '''                results = await asyncio.gather(
+                    *(
+                        self._fetch_p2kflex_region(session, region)
+                        for region in P2KFLEX_REGIONS
+                    ),
+                    return_exceptions=True,
+                )
+'''
+          new = '''                # Do not request both P2KFlex regions concurrently.
+                # P2KFlex uses the same mobile session/cookie and concurrent
+                # engine requests can return stale/mixed result sets.
+                results = []
+                for region in P2KFLEX_REGIONS:
+                    try:
+                        results.append(
+                            await self._fetch_p2kflex_region(session, region)
+                        )
+                    except Exception as err:
+                        results.append(err)
+'''
+          if old not in text:
+              raise SystemExit("Concurrent P2KFlex polling block not found")
+          text = text.replace(old, new, 1)
+
+          old = '''            for region, result in zip(P2KFLEX_REGIONS, results):
+                if isinstance(result, Exception):
+                    errors.append(f"regio {region}: {result}")
+                    continue
+                for message in result:
+                    if not self._is_excluded(message):
+                        normalized_messages.append(message)
+'''
+          new = '''            for region, result in zip(P2KFLEX_REGIONS, results):
+                if isinstance(result, Exception):
+                    errors.append(f"regio {region}: {result}")
+                    _LOGGER.warning(
+                        "P2KFlex regio %s ophalen mislukt: %s",
+                        region,
+                        result,
+                    )
+                    continue
+                _LOGGER.debug(
+                    "P2KFlex regio %s: %s berichten verwerkt",
+                    region,
+                    len(result),
+                )
+                for message in result:
+                    if not self._is_excluded(message):
+                        normalized_messages.append(message)
+'''
+          if old not in text:
+              raise SystemExit("P2KFlex result processing block not found")
+          text = text.replace(old, new, 1)
+
+          old = '''                self._remember_message_id(message_id)
+                live_new.append(message)
+
+            incident_changes = self._process_live_batch(live_new)
+'''
+          new = '''                self._remember_message_id(message_id)
+                live_new.append(message)
+                _LOGGER.info(
+                    "P2KFlex nieuwe melding: %s | %s | %s | %s",
+                    message.get("published", ""),
+                    message.get("discipline", ""),
+                    message.get("city", ""),
+                    message.get("message", ""),
+                )
+
+            incident_changes = self._process_live_batch(live_new)
+'''
+          if old not in text:
+              raise SystemExit("Live message block not found")
+          text = text.replace(old, new, 1)
+
+          coordinator.write_text(text, encoding="utf-8")
+
+          manifest = Path("custom_components/p2000_monitor/manifest.json")
+          m = manifest.read_text(encoding="utf-8")
+          if '"version": "0.4.4"' not in m:
+              raise SystemExit("manifest is not at v0.4.4")
+          m = m.replace('"version": "0.4.4"', '"version": "0.4.5"', 1)
+          manifest.write_text(m, encoding="utf-8")
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/p2000_monitor/coordinator.py custom_components/p2000_monitor/manifest.json
+          git commit -m "Fix sequential P2KFlex polling and normalize disciplines"
+          git push
+
+      - name: Remove temporary workflow
+        if: always()
+        run: |
+          git rm .github/workflows/apply-v045-fix.yml
+          git commit -m "Remove temporary v0.4.5 patch workflow"
+          git push
