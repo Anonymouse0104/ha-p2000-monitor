@@ -7,15 +7,47 @@ import re
 from html import unescape
 
 
+_EVENT_HANDLER = re.compile(
+    r"\bon(?:click|mouse(?:over|out|down|up|move|enter|leave))\s*=",
+    flags=re.I,
+)
+
+
 def clean_visible_text(value: str) -> str:
-    """Extract only visible text and discard HTML event-handler attributes."""
+    """Extract visible P2KFlex message text without JavaScript/HTML leakage."""
     text = unescape(str(value or ""))
-    text = re.sub(r"<script\b[^>]*>.*?</script\s*>", " ", text, flags=re.I | re.S)
-    text = re.sub(r"<style\b[^>]*>.*?</style\s*>", " ", text, flags=re.I | re.S)
-    text = re.sub(r"\bon(?:click|mouse(?:over|out|down|up|move|enter|leave))\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", " ", text, flags=re.I)
-    text = re.sub(r"\bhref\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", " ", text, flags=re.I)
+
+    # P2KFlex sometimes returns an HTML fragment where the visible message is
+    # immediately followed by an event-handler attribute from its tooltip.
+    # Once such an attribute starts, everything after it belongs to the UI,
+    # not to the actual P2000 message.
+    text = _EVENT_HANDLER.split(text, maxsplit=1)[0]
+
+    text = re.sub(
+        r"\bhref\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)",
+        " ",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(
+        r"<script\b[^>]*>.*?</script\s*>",
+        " ",
+        text,
+        flags=re.I | re.S,
+    )
+    text = re.sub(
+        r"<style\b[^>]*>.*?</style\s*>",
+        " ",
+        text,
+        flags=re.I | re.S,
+    )
     text = re.sub(r"<br\s*/?>", " ", text, flags=re.I)
     text = re.sub(r"<[^>]+>", " ", text)
+
+    # Remove the JavaScript/HTML tail that can remain immediately before the
+    # event-handler when P2KFlex has already partially flattened the markup.
+    text = re.sub(r"[\s\"'();]+$", "", text)
+
     return re.sub(r"\s+", " ", text).strip()
 
 
