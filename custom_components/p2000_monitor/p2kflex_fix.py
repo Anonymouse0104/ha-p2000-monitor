@@ -7,15 +7,45 @@ import re
 from html import unescape
 
 
+_EVENT_HANDLER = re.compile(
+    r"\bon(?:click|mouse(?:over|out|down|up|move|enter|leave))\s*=",
+    flags=re.I,
+)
+
+
 def clean_visible_text(value: str) -> str:
-    """Extract only visible text and discard HTML event-handler attributes."""
+    """Extract visible P2KFlex message text without JavaScript/HTML leakage."""
     text = unescape(str(value or ""))
-    text = re.sub(r"<script\b[^>]*>.*?</script\s*>", " ", text, flags=re.I | re.S)
-    text = re.sub(r"<style\b[^>]*>.*?</style\s*>", " ", text, flags=re.I | re.S)
-    text = re.sub(r"\bon(?:click|mouse(?:over|out|down|up|move|enter|leave))\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", " ", text, flags=re.I)
-    text = re.sub(r"\bhref\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", " ", text, flags=re.I)
+
+    # P2KFlex can flatten a tooltip's event-handler attribute into the message
+    # cell. Everything from that handler onward belongs to the page UI, not
+    # to the P2000 message itself.
+    text = _EVENT_HANDLER.split(text, maxsplit=1)[0]
+
+    text = re.sub(
+        r"\bhref\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)",
+        " ",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(
+        r"<script\b[^>]*>.*?</script\s*>",
+        " ",
+        text,
+        flags=re.I | re.S,
+    )
+    text = re.sub(
+        r"<style\b[^>]*>.*?</style\s*>",
+        " ",
+        text,
+        flags=re.I | re.S,
+    )
     text = re.sub(r"<br\s*/?>", " ", text, flags=re.I)
     text = re.sub(r"<[^>]+>", " ", text)
+
+    # Remove the JavaScript punctuation left immediately before the handler.
+    text = re.sub(r"[\s\"'();]+$", "", text)
+
     return re.sub(r"\s+", " ", text).strip()
 
 
