@@ -148,7 +148,11 @@ async def async_setup_entry(
             "exclude_text": filter_config[CONF_EXCLUDE_TEXT],
         },
     )
-    async_add_entities([P2000FilterSensor(coordinator, filter_config, 0)], True)
+    # A Config Entry gets exactly one sensor. The unique ID MUST include the
+    # Config Entry identity; using only the filter index caused every Config
+    # Entry's first sensor to collide on "p2000_monitor_filter_0".
+    entity_key = entry.unique_id or entry.entry_id
+    async_add_entities([P2000FilterSensor(coordinator, filter_config, entity_key)], True)
 
 
 async def async_setup_platform(
@@ -193,7 +197,7 @@ async def async_setup_platform(
 
     entities: list[SensorEntity] = [P2000MonitorSensor(coordinator, name)]
     for index, filter_config in enumerate(filters):
-        entities.append(P2000FilterSensor(coordinator, filter_config, index))
+        entities.append(P2000FilterSensor(coordinator, filter_config, f"legacy_{index}"))
     async_add_entities(entities, True)
 
 
@@ -240,12 +244,12 @@ class P2000MonitorSensor(CoordinatorEntity, SensorEntity):
 class P2000FilterSensor(CoordinatorEntity, SensorEntity):
     """Sensor exposing the latest message matching a user-defined filter."""
 
-    def __init__(self, coordinator, config, index):
+    def __init__(self, coordinator, config, entity_key):
         super().__init__(coordinator)
         self._config = config
-        self._index = index
-        self._attr_name = config.get(CONF_NAME, f"P2000 {index + 1}")
-        self._attr_unique_id = f"p2000_monitor_filter_{index}"
+        self._entity_key = entity_key
+        self._attr_name = config.get(CONF_NAME, "P2000")
+        self._attr_unique_id = f"p2000_monitor_{entity_key}"
 
     @property
     def native_value(self):
