@@ -105,8 +105,6 @@ def _published(item: dict[str, Any]) -> str:
             except ValueError:
                 dt_local = None
             if dt_local is not None:
-                # The API omits the year. Around New Year's, a December message
-                # seen in January belongs to the previous year.
                 if dt_local - now_local > timedelta(days=2):
                     dt_local = dt_local.replace(year=year - 1)
                 return dt_local.astimezone(timezone.utc).isoformat()
@@ -158,7 +156,15 @@ class P2000DataCoordinator(LegacyCoordinator):
         super().__init__(hass, exclude_capcodes=exclude_capcodes, incident_window=incident_window)
 
     async def _fetch_api(self) -> list[dict[str, Any]]:
-        payload = json.dumps(self.api_filter, ensure_ascii=False, separators=(",", ":"))
+        # The public API endpoint is proven to support region, service and
+        # capcode filtering. Priorities and text filters are deliberately kept
+        # out of the request and are applied locally below.
+        request_filter = {
+            key: self.api_filter[key]
+            for key in ("regios", "diensten", "capcodes")
+            if self.api_filter.get(key) not in (None, "", [], {})
+        }
+        payload = json.dumps(request_filter, ensure_ascii=False, separators=(",", ":"))
         headers = {
             "User-Agent": "P2000-Monitor/0.5.2 Home Assistant",
             "Accept": "application/json, text/plain, */*",
