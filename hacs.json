@@ -1,0 +1,7 @@
+{
+  "name": "P2000 Monitor",
+  "content_in_root": false,
+  "render_readme": true,
+  "zip_release": true,
+  "filename": "p2000_monitor"
+}
