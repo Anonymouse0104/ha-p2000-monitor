@@ -130,20 +130,23 @@ async def async_setup_entry(
         CONF_INCLUDE_TEXT: data.get(CONF_INCLUDE_TEXT, []),
         CONF_EXCLUDE_TEXT: data.get(CONF_EXCLUDE_TEXT, []),
     }
+    # The AlarmeringDroid API is known to support region, service and capcode
+    # filters. Priority/text filters are applied locally so an API change or
+    # unsupported filter key cannot make an otherwise valid query return zero.
     api_filter = {
         "regios": filter_config[CONF_REGIONS],
         "diensten": filter_config[CONF_DISCIPLINES],
         "capcodes": filter_config[CONF_CAPCODES],
-        "melding": filter_config[CONF_INCLUDE_TEXT],
-        "priorities": filter_config[CONF_PRIORITIES],
-        "include_text": filter_config[CONF_INCLUDE_TEXT],
-        "exclude_text": filter_config[CONF_EXCLUDE_TEXT],
     }
     coordinator = await _build_coordinator(
         hass,
         int(data.get(CONF_INCIDENT_WINDOW, DEFAULT_INCIDENT_WINDOW)),
         [],
-        api_filter,
+        api_filter | {
+            "priorities": filter_config[CONF_PRIORITIES],
+            "include_text": filter_config[CONF_INCLUDE_TEXT],
+            "exclude_text": filter_config[CONF_EXCLUDE_TEXT],
+        },
     )
     async_add_entities([P2000FilterSensor(coordinator, filter_config, 0)], True)
 
@@ -164,7 +167,7 @@ async def async_setup_platform(
     if not hass.services.has_service(DOMAIN, SERVICE_INJECT_TEST_INCIDENT):
         async def handle_test_incident(call):
             region = str(call.data.get(ATTR_TEST_REGION, "21"))
-            region_name = call.data.get(ATTR_TEST_REGION_NAME, REGIONS.get(region, "Limburg-Zuid"))
+            region_name = call.data.get(ATTR_TEST_REGION_NAME, REGIONS.get(region, "Zuid-Limburg"))
             discipline = call.data.get(ATTR_TEST_DISCIPLINE, "Brandweerdiensten")
             message = call.data.get(ATTR_TEST_MESSAGE, "P 1 BR woning Teststraat Maastricht 243231")
             capcodes = call.data.get(ATTR_TEST_CAPCODES, ["1005258", "1005264", "1005998"])
@@ -221,103 +224,46 @@ class P2000MonitorSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         data = self.coordinator.data or {}
         latest = data.get("latest") or {}
-        attrs = dict(latest)
-        attrs["incident_count"] = len(data.get("incidents", []))
-        return attrs
-
-    def _handle_coordinator_update(self):
-        data = self.coordinator.data or {}
-        for message in data.get("new_messages", []):
-            self.hass.bus.async_fire(EVENT_NEW_MESSAGE, dict(message))
-        for change in data.get("incident_changes", []):
-            event = EVENT_NEW_INCIDENT if change.get("action") == "new" else EVENT_INCIDENT_UPDATE
-            self.hass.bus.async_fire(event, dict(change.get("incident", {})))
-        super()._handle_coordinator_update()
+        history = list(data.get("new_messages") or [])
+        return {
+            "source": latest.get("source", "alarmeringdroid"),
+            "region": latest.get("regio_name", ""),
+            "discipline": latest.get("discipline", ""),
+            "city": latest.get("city", ""),
+            "published": latest.get("published", ""),
+            "message_id": latest.get("message_id", ""),
+            "incident_count": len(data.get("incidents") or []),
+            "new_message_count": len(history),
+        }
 
 
 class P2000FilterSensor(CoordinatorEntity, SensorEntity):
-    """Filtered P2000 view with incident history."""
+    """Sensor exposing the latest message matching a user-defined filter."""
 
-    _attr_icon = "mdi:radio-tower"
-
-    def __init__(self, coordinator, filter_config, index):
+    def __init__(self, coordinator, config, index):
         super().__init__(coordinator)
-        self.filter_config = filter_config
-        self._attr_name = filter_config[CONF_NAME]
-        safe = re.sub(r"[^a-z0-9]+", "_", self._attr_name.lower()).strip("_")
-        self._attr_unique_id = f"p2000_monitor_filter_{index}_{safe}"
-        self._history = deque(maxlen=MAX_HISTORY)
-        self._incident_history = deque(maxlen=MAX_FILTER_INCIDENT_HISTORY)
-        self._processed = set()
-        self._processed_incidents = set()
-
-    def _matching_messages(self) -> list[dict[str, Any]]:
-        data = self.coordinator.data or {}
-        candidates = []
-        latest = data.get("latest")
-        if isinstance(latest, dict):
-            candidates.append(latest)
-        candidates.extend(data.get("new_messages", []))
-        unique = {}
-        for message in candidates:
-            mid = message.get("message_id")
-            if mid:
-                unique[mid] = message
-        return [m for m in unique.values() if _filter_matches(m, self.filter_config)]
-
-    def _matching_incidents(self) -> list[dict[str, Any]]:
-        data = self.coordinator.data or {}
-        return [i for i in data.get("incidents", []) if _filter_matches(i, self.filter_config)]
+        self._config = config
+        self._index = index
+        self._attr_name = config.get(CONF_NAME, f"P2000 {index + 1}")
+        self._attr_unique_id = f"p2000_monitor_filter_{index}"
 
     @property
     def native_value(self):
-        latest = self._history[0] if self._history else None
-        if latest:
-            return latest.get("message", "Onbekende melding")
-        matches = self._matching_messages()
-        return matches[0].get("message", "Geen meldingen") if matches else "Geen meldingen"
+        messages = self._matching_messages()
+        return messages[0].get("message", "Geen meldingen") if messages else "Geen meldingen"
 
     @property
     def icon(self):
-        latest = self._history[0] if self._history else None
-        if latest:
-            return {
-                "Brandweerdiensten": "mdi:fire-truck",
-                "Ambulancediensten": "mdi:ambulance",
-                "Politiediensten": "mdi:car-emergency",
-                "Lifeliner": "mdi:helicopter",
-            }.get(latest.get("discipline"), "mdi:radio-tower")
-        return "mdi:radio-tower"
+        messages = self._matching_messages()
+        latest = messages[0] if messages else {}
+        return {
+            "Brandweerdiensten": "mdi:fire-truck",
+            "Ambulancediensten": "mdi:ambulance",
+            "Politiediensten": "mdi:car-emergency",
+            "Lifeliner": "mdi:helicopter",
+        }.get(latest.get("discipline"), "mdi:radio-tower")
 
-    @property
-    def extra_state_attributes(self):
-        latest = self._history[0] if self._history else None
-        incidents = list(self._incident_history)
-        latest_incident = incidents[0] if incidents else None
-        attrs = dict(latest or {})
-        attrs["filter"] = self.filter_config
-        attrs["incident_count"] = len(incidents)
-        attrs["incident"] = latest_incident
-        attrs["incident_id"] = latest_incident.get("incident_id") if latest_incident else None
-        attrs["incident_tijd"] = latest_incident.get("last_seen") if latest_incident else None
-        attrs["incidenten"] = incidents
-        attrs["incident_history"] = incidents
-        attrs["incidenthistorie"] = incidents
-        attrs["meldingen"] = [x.get("message", "") for x in list(self._history)]
-        return attrs
-
-    def _handle_coordinator_update(self):
-        for message in self.coordinator.data.get("new_messages", []) if self.coordinator.data else []:
-            if not _filter_matches(message, self.filter_config):
-                continue
-            mid = message.get("message_id")
-            if mid and mid not in self._processed:
-                self._processed.add(mid)
-                self._history.appendleft(dict(message))
-                self.hass.bus.async_fire(EVENT_FILTER_MATCH, {"filter": self.filter_config, "message": dict(message)})
-        for incident in self._matching_incidents():
-            iid = incident.get("incident_id")
-            if iid and iid not in self._processed_incidents:
-                self._processed_incidents.add(iid)
-                self._incident_history.appendleft(dict(incident))
-        super()._handle_coordinator_update()
+    def _matching_messages(self):
+        data = self.coordinator.data or {}
+        messages = list(data.get("new_messages") or [])
+        return [m for m in messages if _filter_matches(m, self._config)]
