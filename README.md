@@ -1,139 +1,73 @@
 # P2000 Monitor for Home Assistant
 
-A Home Assistant integration for live Dutch P2000 emergency alerts, with a focus on reliable event processing, incident grouping and easy configuration.
+Home Assistant integration for live Dutch P2000 emergency alerts using the structured **AlarmeringDroid API**.
 
-## What's new in 0.5.0
+## v0.5.5
 
-Version 0.5.0 replaces the old P2KFlex HTML scraper with the structured AlarmeringDroid API. This removes the dependency on parsing the P2KFlex mobile website and its changing HTML/JavaScript markup.
+This release fixes the filtering path that could allow messages from the wrong safety region into a configured sensor and fixes sensors that stayed empty when a matching message was already present during startup.
 
-The integration now has a normal Home Assistant **Config Flow**, so a new user can install it through HACS and configure their own P2000 sensor entirely from the Home Assistant UI. No YAML is required for a new installation.
+### Important changes
 
-## Features
+- **AlarmeringDroid API only** in the active data path.
+- Region, service and capcode filters are enforced **locally as well as at the API**, so an API-side filtering problem cannot leak another region into a sensor.
+- Priority, include-text and exclude-text filters are applied locally.
+- Filter sensors now use the current API result instead of only `new_messages`.
+- Old split coordinator/P2KFlex code is removed from the active integration.
+- Additional logging shows the API filter, result count, normalized count and filtered count.
+- P2000 Monitor branding is included with `icon.png` and `logo.png`.
 
-- Live P2000 alerts from the structured AlarmeringDroid API
-- Configurable from **Settings → Devices & services → Add integration**
-- Multiple P2000 sensors can be created, each with its own filters
-- Filter by safety region
-- Filter by service: police, fire brigade, ambulance, KNRM, Lifeliner or DARES
-- Filter by priority P1–P5
-- Filter by capcode
-- Include text keywords
-- Exclude text keywords
-- Incident grouping and incident history
-- Stable message IDs and duplicate protection
-- Persistent incident history across Home Assistant restarts
-- Home Assistant events for new messages, filter matches and incidents
-- Existing YAML configuration remains supported
+## Install with HACS
 
-## Installation
-
-### HACS
-
-1. Open HACS.
-2. Search for **P2000 Monitor**.
-3. Install the integration.
+1. Open **HACS**.
+2. Find **P2000 Monitor**.
+3. Update to **v0.5.5**.
 4. Restart Home Assistant.
-5. Go to **Settings → Devices & services**.
-6. Click **Add integration** and search for **P2000 Monitor**.
+5. Open **Settings → Devices & services → P2000 Monitor**.
 
-### Manual installation
+## Configure your own sensors
 
-Copy:
+Every Config Flow entry is an independent sensor. A different user can install the integration and choose their own filters; nothing is hard-coded to Echt or Zuid-Limburg.
 
-```text
-custom_components/p2000_monitor/
-```
+Available filters:
 
-to:
+- Safety region
+- Discipline/service
+- Priority P1–P5
+- Capcodes
+- Text must contain
+- Text must not contain
+- Incident window
 
-```text
-/config/custom_components/p2000_monitor/
-```
+Filters are combined with **AND** logic between categories. Text values can be separated by commas or semicolons.
 
-Then restart Home Assistant.
+### Examples
 
-## Configure your own sensor
+**Brandweer Zuid-Limburg**
 
-After installation, use the Home Assistant config flow.
-
-You can create, for example:
-
-### Brandweer Zuid-Limburg
-
-- Name: `Brandweer Zuid-Limburg`
-- Region: `Limburg-Zuid`
+- Region: `Zuid-Limburg`
 - Service: `Brandweer`
 
-### Brandweer Echt
+**Brandweer Echt**
 
-- Name: `Brandweer Echt`
-- Region: `Limburg-Zuid`
+- Region: `Limburg-Noord`
 - Service: `Brandweer`
-- Text contains: `Echt`
+- Include text: `Echt`
 
-### Alle P1-meldingen
+**Alle P1-meldingen**
 
-- Name: `P2000 P1`
 - Priority: `P1`
 
-### Een specifieke capcode
+## AlarmeringDroid region IDs
 
-- Name: `Mijn kazerne`
-- Capcodes: `100xxxx`
+The integration uses the IDs returned by the AlarmeringDroid API. Important Limburg values are:
 
-You can create as many separately configured sensors as you need.
-
-Filters can be changed later through the integration's **Configure** option. A restart is not required when changing the filters; the entry is automatically reloaded.
-
-## Filter behaviour
-
-All selected filters are combined with **AND** logic between filter categories.
-
-For text filters:
-
-- `Tekst moet bevatten`: all entered keywords must occur in the message.
-- `Tekst mag niet bevatten`: none of the entered keywords may occur.
-- Multiple values can be separated with commas or semicolons.
-
-For example:
-
-```text
-Tekst moet bevatten: Echt, woning
-```
-
-only matches messages containing both `Echt` and `woning`.
-
-## Safety regions
-
-The integration uses the region numbering used by the AlarmeringDroid API. Examples:
-
-| ID | Safety region |
+| ID | Region |
 |---:|---|
-| 1 | Amsterdam-Amstelland |
-| 2 | Groningen |
-| 3 | Noord- en Oost-Gelderland |
-| 4 | Zaanstreek-Waterland |
-| 5 | Hollands Midden |
-| 6 | Brabant-Noord |
-| 7 | Friesland |
-| 8 | Gelderland-Midden |
-| 9 | Kennemerland |
-| 10 | Rotterdam-Rijnmond |
-| 11 | Brabant-Zuidoost |
-| 12 | Drenthe |
-| 13 | Gelderland-Zuid |
-| 14 | Zuid-Holland-Zuid |
 | 15 | Limburg-Noord |
-| 17 | IJsselland |
-| 18 | Utrecht |
-| 19 | Gooi en Vechtstreek |
-| 20 | Zeeland |
-| 21 | Limburg-Zuid |
+| 21 | Zuid-Limburg |
 | 23 | Twente |
-| 24 | Noord-Holland-Noord |
-| 25 | Haaglanden |
-| 26 | Midden- en West-Brabant |
-| 27 | Flevoland |
+
+This mapping is deliberately kept in one place. The old P2KFlex 23/24 mapping is no longer used by the active integration.
 
 ## Services
 
@@ -146,33 +80,22 @@ The integration uses the region numbering used by the AlarmeringDroid API. Examp
 | 5 | Lifeliner |
 | 7 | DARES |
 
-## Sensor attributes
+## Troubleshooting
 
-The configured sensor exposes the latest matching alert and useful incident information, including:
+The integration logs the filtering pipeline under the `p2000_monitor` logger. Useful entries include:
 
-- `message`
-- `melding`
-- `tekstmelding`
-- `published`
-- `regio`
-- `regio_name`
-- `discipline`
-- `dienstid`
-- `city`
-- `capcode`
-- `latitude`
-- `longitude`
-- `incident_count`
-- `incident`
-- `incident_id`
-- `incident_tijd`
-- `incidenten`
-- `incident_history`
-- `meldingen`
+```text
+P2000 API filter: {"regios":["15"],"diensten":["2"]}
+P2000 API returned ... messages; normalized ...
+P2000 after filters: ... messages
+P2000 initialized: latest=... region=15/Limburg-Noord
+```
+
+If a message for Enschede (Twente, region 23) is returned while a sensor is configured for region 15, the local region filter removes it before the sensor sees it.
 
 ## Events
 
-The integration provides Home Assistant events for automations:
+The integration exposes these Home Assistant events:
 
 ```text
 p2000_monitor_new_message
@@ -181,64 +104,13 @@ p2000_monitor_new_incident
 p2000_monitor_incident_update
 ```
 
-Example:
+## Legacy YAML
 
-```yaml
-triggers:
-  - trigger: event
-    event_type: p2000_monitor_filter_match
-```
-
-## Existing YAML installations
-
-The legacy YAML platform remains supported for backwards compatibility. Existing installations can continue using their current configuration while new users should use the Config Flow.
+Existing YAML installations remain supported. New installations should use Config Flow.
 
 ## Data source
 
-P2000 Monitor 0.5.0 uses the structured AlarmeringDroid API rather than scraping the P2KFlex website. AlarmeringDroid describes its service as a structured P2000 data source and its live monitor supports filtering by service, region and priority.
-
-The integration polls the API approximately every 10 seconds by default.
-
-Please respect the data provider's usage policy and do not create excessive polling or multiple unnecessary installations.
-
-## Troubleshooting
-
-### No alerts appear
-
-Check:
-
-1. The integration is installed and Home Assistant has been restarted after installation.
-2. The configured region/service/capcode filters are correct.
-3. The message is actually present in the P2000 data source.
-4. Home Assistant logs for `p2000_monitor` contain API errors.
-
-### I changed a filter
-
-Open the integration and choose **Configure**. The integration reloads the sensor automatically after saving.
-
-### Old P2KFlex HTML problems
-
-Version 0.5.0 no longer depends on the P2KFlex HTML parser. Problems caused by strings such as `<span class="TIP` or JavaScript attributes from the P2KFlex webpage therefore no longer affect the primary data path.
-
-## Development
-
-The project is intentionally split into:
-
-```text
-Config Flow
-    ↓
-Sensor platform
-    ↓
-Coordinator
-    ↓
-AlarmeringDroid API
-    ↓
-P2000 events
-    ↓
-Incident engine
-```
-
-This keeps source retrieval separate from filtering, sensor presentation and incident grouping.
+The active integration uses the structured AlarmeringDroid API and no longer relies on the P2KFlex mobile HTML parser.
 
 ## License
 
