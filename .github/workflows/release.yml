@@ -1,0 +1,24 @@
+name: Create release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: contains(github.event.head_commit.message, 'prepare v0.5.1')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create v0.5.1 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.5.1 \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "P2000 Monitor v0.5.1 – HACS download fix" \
+            --notes "## P2000 Monitor v0.5.1\n\n- Fix HACS repository downloads by using the standard repository archive.\n- Remove the incorrect zip_release configuration.\n- Add the required HACS/Home Assistant manifest metadata.\n- Keep the new UI-configurable filters and AlarmeringDroid API from v0.5.0."
