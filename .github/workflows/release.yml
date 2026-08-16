@@ -10,15 +10,15 @@ permissions:
 
 jobs:
   release:
-    if: contains(github.event.head_commit.message, 'prepare v0.5.2')
+    if: contains(github.event.head_commit.message, 'prepare v0.5.3')
     runs-on: ubuntu-latest
     steps:
-      - name: Create v0.5.2 release
+      - name: Create v0.5.3 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.5.2 \
+          gh release create v0.5.3 \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "P2000 Monitor v0.5.2 – API filtering & timestamp fix" \
-            --notes "## P2000 Monitor v0.5.2\n\n### Fixes\n- Parse AlarmeringDroid's separate `datum` and `tijd` fields into stable timestamps.\n- Stop treating every API message as if it arrived at the current time.\n- Keep priority, include-text and exclude-text filters local so unsupported API filter parameters cannot suppress valid messages.\n- Correct the official region name to **Zuid-Limburg**.\n- Recognize the API's `regioid` field directly.\n\n### Validation\n- Verified against the live AlarmeringDroid API with `regios=[21]` and `diensten=[2]`.\n- Live API response contains current Zuid-Limburg brandweer incidents."
+            --title "P2000 Monitor v0.5.3 – Config Entry entity fix" \
+            --notes "## P2000 Monitor v0.5.3\n\n### Fixes\n- Give every Config Flow sensor a unique entity ID based on its Config Entry.\n- Prevent multiple P2000 Monitor configurations from colliding on the same `p2000_monitor_filter_0` entity ID.\n- Keep each configured filter as an independent sensor.\n\n### Result\n- Brandweer Echt, Brandweer Limburg-Noord, Brandweer Zuid-Limburg, Brandweer Limburg, P2000 Monitor and other independently configured entries can now coexist correctly.\n- No YAML configuration is required for Config Flow entries."
