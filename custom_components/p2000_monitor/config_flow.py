@@ -30,7 +30,7 @@ REGIONS = {
     "18": "Utrecht",
     "19": "Gooi en Vechtstreek",
     "20": "Zeeland",
-    "21": "Limburg-Zuid",
+    "21": "Zuid-Limburg",
     "23": "Twente",
     "24": "Noord-Holland-Noord",
     "25": "Haaglanden",
