@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 import aiohttp
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .coordinator import P2000DataCoordinator as LegacyCoordinator
 
@@ -15,43 +16,21 @@ _LOGGER = logging.getLogger(__name__)
 API_URL = "https://beta.alarmeringdroid.nl/api2/find/"
 API_TIMEOUT = 15
 
-# AlarmeringDroid region IDs. These are the IDs used by its API,
-# not the P2KFlex region numbers used by older versions of this integration.
 REGIONS: dict[str, str] = {
-    "1": "Amsterdam-Amstelland",
-    "2": "Groningen",
-    "3": "Noord- en Oost-Gelderland",
-    "4": "Zaanstreek-Waterland",
-    "5": "Hollands Midden",
-    "6": "Brabant-Noord",
-    "7": "Friesland",
-    "8": "Gelderland-Midden",
-    "9": "Kennemerland",
-    "10": "Rotterdam-Rijnmond",
-    "11": "Brabant-Zuidoost",
-    "12": "Drenthe",
-    "13": "Gelderland-Zuid",
-    "14": "Zuid-Holland-Zuid",
-    "15": "Limburg-Noord",
-    "17": "IJsselland",
-    "18": "Utrecht",
-    "19": "Gooi en Vechtstreek",
-    "20": "Zeeland",
-    "21": "Limburg-Zuid",
-    "23": "Twente",
-    "24": "Noord-Holland-Noord",
-    "25": "Haaglanden",
-    "26": "Midden- en West-Brabant",
+    "1": "Amsterdam-Amstelland", "2": "Groningen", "3": "Noord- en Oost-Gelderland",
+    "4": "Zaanstreek-Waterland", "5": "Hollands Midden", "6": "Brabant-Noord",
+    "7": "Friesland", "8": "Gelderland-Midden", "9": "Kennemerland",
+    "10": "Rotterdam-Rijnmond", "11": "Brabant-Zuidoost", "12": "Drenthe",
+    "13": "Gelderland-Zuid", "14": "Zuid-Holland-Zuid", "15": "Limburg-Noord",
+    "17": "IJsselland", "18": "Utrecht", "19": "Gooi en Vechtstreek",
+    "20": "Zeeland", "21": "Limburg-Zuid", "23": "Twente",
+    "24": "Noord-Holland-Noord", "25": "Haaglanden", "26": "Midden- en West-Brabant",
     "27": "Flevoland",
 }
 
 SERVICES = {
-    "1": "Politiediensten",
-    "2": "Brandweerdiensten",
-    "3": "Ambulancediensten",
-    "4": "KNRM",
-    "5": "Lifeliner",
-    "7": "DARES",
+    "1": "Politiediensten", "2": "Brandweerdiensten", "3": "Ambulancediensten",
+    "4": "KNRM", "5": "Lifeliner", "7": "DARES",
 }
 
 
@@ -77,15 +56,15 @@ def _capcode_from_item(item: dict[str, Any]) -> str:
 
 
 def _region_id(item: dict[str, Any]) -> str:
-    raw = item.get("regio")
+    raw = item.get("regio_id", item.get("region_id"))
     if raw is None:
-        raw = item.get("regio_id", item.get("region_id"))
+        raw = item.get("regio")
     raw = _as_text(raw)
     if raw.isdigit():
         return raw
-    wanted = raw.lower().replace(" ", "")
+    wanted = raw.lower().replace(" ", "").replace("-", "")
     for region_id, name in REGIONS.items():
-        if wanted == name.lower().replace(" ", ""):
+        if wanted == name.lower().replace(" ", "").replace("-", ""):
             return region_id
     return ""
 
@@ -93,22 +72,21 @@ def _region_id(item: dict[str, Any]) -> str:
 def _published(item: dict[str, Any]) -> str:
     for key in ("published", "datetime", "datumtijd", "timestamp", "date"):
         value = item.get(key)
-        if value:
-            text = _as_text(value)
-            try:
-                dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                return dt.astimezone(timezone.utc).isoformat()
-            except ValueError:
-                continue
-    # The API normally supplies a timestamp. If an older response does not,
-    # keep it identifiable but do not invent an old event time.
+        if not value:
+            continue
+        text = _as_text(value)
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc).isoformat()
+        except ValueError:
+            continue
     return datetime.now(timezone.utc).isoformat()
 
 
 def normalize_api_message(item: dict[str, Any]) -> dict[str, Any] | None:
-    """Convert an AlarmeringDroid item into our internal message format."""
+    """Convert one AlarmeringDroid item into our internal message format."""
     message = _as_text(item.get("tekstmelding") or item.get("message") or item.get("melding"))
     if not message:
         return None
@@ -117,7 +95,6 @@ def normalize_api_message(item: dict[str, Any]) -> dict[str, Any] | None:
     discipline = SERVICES.get(dienst_id, _as_text(item.get("discipline") or item.get("dienst")))
     region = _region_id(item)
     region_name = REGIONS.get(region, _as_text(item.get("regio_name") or item.get("region_name") or item.get("regio")))
-
     latitude = item.get("latitude", item.get("lat", ""))
     longitude = item.get("longitude", item.get("lon", ""))
     city = _as_text(item.get("plaats") or item.get("city") or item.get("woonplaats"))
@@ -147,7 +124,7 @@ class P2000DataCoordinator(LegacyCoordinator):
     """Drop-in replacement using the structured AlarmeringDroid API."""
 
     def __init__(self, hass, exclude_capcodes=None, incident_window=900, api_filter=None):
-        self.api_filter = dict(api_filter or {})
+        self.api_filter = {k: v for k, v in (api_filter or {}).items() if v not in (None, "", [], {})}
         super().__init__(hass, exclude_capcodes=exclude_capcodes, incident_window=incident_window)
 
     async def _fetch_api(self) -> list[dict[str, Any]]:
@@ -160,8 +137,6 @@ class P2000DataCoordinator(LegacyCoordinator):
         async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(f"{API_URL}{payload}", timeout=timeout) as response:
                 response.raise_for_status()
-                # AlarmeringDroid has historically returned JSON with an
-                # incorrect/missing content-type, so parse the body ourselves.
                 text = await response.text(errors="replace")
                 raw = json.loads(text)
 
@@ -173,26 +148,26 @@ class P2000DataCoordinator(LegacyCoordinator):
 
         messages: list[dict[str, Any]] = []
         for item in items:
-            if not isinstance(item, dict):
-                continue
-            message = normalize_api_message(item)
-            if message:
-                messages.append(message)
+            if isinstance(item, dict):
+                message = normalize_api_message(item)
+                if message:
+                    messages.append(message)
         return messages
 
     @staticmethod
     def _local_filter(message: dict[str, Any], api_filter: dict[str, Any]) -> bool:
-        """Apply filters that are not guaranteed to be supported server-side."""
+        from .coordinator import extract_priority
+
         priorities = api_filter.get("priorities") or []
         if priorities:
-            from .coordinator import extract_priority
             wanted = {str(x).upper().replace(" ", "") for x in priorities}
             if (extract_priority(message.get("message", "")) or "").upper() not in wanted:
                 return False
+
         include_text = [str(x).lower() for x in api_filter.get("include_text", []) if str(x).strip()]
         exclude_text = [str(x).lower() for x in api_filter.get("exclude_text", []) if str(x).strip()]
         text = str(message.get("message", "")).lower()
-        if include_text and not any(x in text for x in include_text):
+        if include_text and not all(x in text for x in include_text):
             return False
         if exclude_text and any(x in text for x in exclude_text):
             return False
@@ -204,9 +179,7 @@ class P2000DataCoordinator(LegacyCoordinator):
             messages = await self._fetch_api()
         except Exception as err:
             _LOGGER.exception("AlarmeringDroid API update mislukt")
-            raise __import__("homeassistant.helpers.update_coordinator", fromlist=["UpdateFailed"]).UpdateFailed(
-                f"AlarmeringDroid API update mislukt: {err}"
-            ) from err
+            raise UpdateFailed(f"AlarmeringDroid API update mislukt: {err}") from err
 
         messages = [m for m in messages if not self._is_excluded(m)]
         messages = [m for m in messages if self._local_filter(m, self.api_filter)]
@@ -221,12 +194,7 @@ class P2000DataCoordinator(LegacyCoordinator):
             for message in messages:
                 self._remember_message_id(message.get("message_id", ""))
             self._initialized = True
-            return {
-                "latest": latest,
-                "new_messages": [],
-                "incident_changes": [],
-                "incidents": self._current_incidents(),
-            }
+            return {"latest": latest, "new_messages": [], "incident_changes": [], "incidents": self._current_incidents()}
 
         now = datetime.now(timezone.utc)
         live_horizon = max(self.incident_window, 900)
@@ -244,17 +212,14 @@ class P2000DataCoordinator(LegacyCoordinator):
             live_new.append(message)
             _LOGGER.info(
                 "AlarmeringDroid nieuwe melding: %s | %s | %s | %s | regio %s",
-                message.get("published", ""),
-                message.get("discipline", ""),
-                message.get("city", ""),
-                message.get("message", ""),
+                message.get("published", ""), message.get("discipline", ""),
+                message.get("city", ""), message.get("message", ""),
                 message.get("regio_name", message.get("regio", "")),
             )
 
         incident_changes = self._process_live_batch(live_new)
         if incident_changes:
             await self.async_save_incident_history()
-
         return {
             "latest": latest,
             "new_messages": live_new,
