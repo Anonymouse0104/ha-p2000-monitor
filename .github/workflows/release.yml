@@ -10,15 +10,15 @@ permissions:
 
 jobs:
   release:
-    if: contains(github.event.head_commit.message, 'prepare v0.5.5')
+    if: contains(github.event.head_commit.message, 'prepare v0.5.6')
     runs-on: ubuntu-latest
     steps:
-      - name: Create v0.5.5 release
+      - name: Create v0.5.6 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.5.5 \
+          gh release create v0.5.6 \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "P2000 Monitor v0.5.5 – API filtering and region fix" \
-            --notes "## P2000 Monitor v0.5.5\n\n### Fixes\n- Use only the structured AlarmeringDroid API in the active data path.\n- Enforce region, service and capcode filters locally as a safety net around API filtering.\n- Fix filter sensors so they show the current matching API result even when it was already present during startup.\n- Correct AlarmeringDroid region IDs: 15 = Limburg-Noord, 21 = Zuid-Limburg, 23 = Twente.\n- Remove the obsolete split coordinator and old P2KFlex data path.\n- Add clearer API/filter logging for troubleshooting.\n- Add P2000 Monitor branding/logo assets.\n\n### Compatibility\n- Config Flow installations remain UI-configured and independently filterable.\n- Legacy YAML remains supported."
+            --title "P2000 Monitor v0.5.6 – newest matching message fix" \
+            --notes "## P2000 Monitor v0.5.6\n\n### Fixes\n- Always select the newest matching P2000 message by publication timestamp.\n- Sort matching message history newest-first.\n- Sort matching incident history by last-seen/first-seen timestamp.\n- Keep Config Flow filtering and AlarmeringDroid API processing unchanged.\n\n### Why\nThe API result order is not guaranteed to have the newest matching message first. This release fixes the sensor selecting an older matching incident while newer messages were already available.\n\n### Compatibility\n- Existing Config Flow configurations remain usable.\n- The legacy YAML path remains supported."
