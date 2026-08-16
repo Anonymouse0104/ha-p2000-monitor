@@ -1,5 +1,6 @@
 """Sensor platform for P2000 Monitor."""
 from __future__ import annotations
+from datetime import datetime
 from typing import Any
 import voluptuous as vol
 from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
@@ -33,6 +34,18 @@ def _filter_matches(message:dict[str,Any],config:dict[str,Any])->bool:
     if exclude and any(x in lower for x in exclude):return False
     return True
 
+def _published_timestamp(message:dict[str,Any])->float:
+    value=message.get("published")
+    if not value:return 0.0
+    try:
+        dt=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+        return dt.timestamp()
+    except (TypeError,ValueError):
+        return 0.0
+
+def _newest_first(messages:list[dict[str,Any]])->list[dict[str,Any]]:
+    return sorted(messages,key=_published_timestamp,reverse=True)
+
 async def _build_coordinator(hass:HomeAssistant,incident_window:int,exclude_capcodes:list[str],api_filter:dict[str,Any]|None=None)->P2000DataCoordinator:
     coordinator=P2000DataCoordinator(hass=hass,exclude_capcodes=exclude_capcodes,incident_window=incident_window,api_filter=api_filter or {})
     await coordinator.async_config_entry_first_refresh(); return coordinator
@@ -52,7 +65,7 @@ async def async_setup_platform(hass:HomeAssistant,config:ConfigType,async_add_en
         async def handle_test_incident(call):
             region=str(call.data.get(ATTR_TEST_REGION,"21")); region_name=call.data.get(ATTR_TEST_REGION_NAME,REGIONS.get(region,"Zuid-Limburg")); discipline=call.data.get(ATTR_TEST_DISCIPLINE,"Brandweerdiensten"); message=call.data.get(ATTR_TEST_MESSAGE,"P 1 BR woning Teststraat Maastricht 243231"); capcodes=call.data.get(ATTR_TEST_CAPCODES,["1005258","1005264","1005998"])
             if isinstance(capcodes,str):capcodes=[capcodes]
-            from datetime import datetime,timezone
+            from datetime import timezone
             now=datetime.now(timezone.utc)
             messages=[{"message":message,"capcode":str(capcode),"regio":region,"regio_name":region_name,"discipline":discipline,"dienstid":"2" if discipline=="Brandweerdiensten" else "","latitude":"50.8514","longitude":"5.6909","published":f"TEST-PENDING-{now.isoformat()}-{index}","test":True} for index,capcode in enumerate(capcodes)]
             await coordinator.async_inject_test_messages(messages)
@@ -83,10 +96,12 @@ class P2000FilterSensor(P2000BaseSensor):
     def __init__(self,coordinator,config,entity_key):
         super().__init__(coordinator); self._config=config; self._entity_key=entity_key; self._attr_name=config.get(CONF_NAME,"P2000"); self._attr_unique_id=f"p2000_monitor_{entity_key}"
     def _matching_messages(self):
-        # Use the current API result, not only new_messages, so a sensor is populated after startup.
-        return [m for m in list(self._data().get("messages") or []) if _filter_matches(m,self._config)]
+        # Use the current API result, then sort by publication time so the newest matching message is always selected.
+        messages=[m for m in list(self._data().get("messages") or []) if _filter_matches(m,self._config)]
+        return _newest_first(messages)
     def _matching_incidents(self):
-        return [i for i in self._data().get("incidents",[]) if _filter_matches(i,self._config)][:MAX_FILTER_INCIDENT_HISTORY]
+        incidents=[i for i in self._data().get("incidents",[]) if _filter_matches(i,self._config)]
+        return sorted(incidents,key=lambda i:_published_timestamp({"published":i.get("last_seen") or i.get("first_seen")}),reverse=True)[:MAX_FILTER_INCIDENT_HISTORY]
     @property
     def native_value(self):
         messages=self._matching_messages(); return messages[0].get("message","Geen meldingen") if messages else "Geen meldingen"
