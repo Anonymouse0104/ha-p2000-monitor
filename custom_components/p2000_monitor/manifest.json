@@ -1,11 +1,12 @@
 {
   "domain": "p2000_monitor",
   "name": "P2000 Monitor",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "documentation": "https://github.com/Anonymouse0104/ha-p2000-monitor",
+  "issue_tracker": "https://github.com/Anonymouse0104/ha-p2000-monitor/issues",
   "config_flow": true,
   "requirements": [],
-  "codeowners": [],
+  "codeowners": ["@Anonymouse0104"],
   "iot_class": "cloud_polling",
   "integration_type": "service"
 }
