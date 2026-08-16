@@ -11,80 +11,44 @@ from homeassistant.helpers import selector
 DOMAIN = "p2000_monitor"
 
 REGIONS = {
-    "1": "Amsterdam-Amstelland",
-    "2": "Groningen",
-    "3": "Noord- en Oost-Gelderland",
-    "4": "Zaanstreek-Waterland",
-    "5": "Hollands Midden",
-    "6": "Brabant-Noord",
-    "7": "Friesland",
-    "8": "Gelderland-Midden",
-    "9": "Kennemerland",
-    "10": "Rotterdam-Rijnmond",
-    "11": "Brabant-Zuidoost",
-    "12": "Drenthe",
-    "13": "Gelderland-Zuid",
-    "14": "Zuid-Holland-Zuid",
-    "15": "Limburg-Noord",
-    "17": "IJsselland",
-    "18": "Utrecht",
-    "19": "Gooi en Vechtstreek",
-    "20": "Zeeland",
-    "21": "Zuid-Limburg",
-    "23": "Twente",
-    "24": "Noord-Holland-Noord",
-    "25": "Haaglanden",
-    "26": "Midden- en West-Brabant",
-    "27": "Flevoland",
+    "1": "Amsterdam-Amstelland", "2": "Groningen", "3": "Noord- en Oost-Gelderland",
+    "4": "Zaanstreek-Waterland", "5": "Hollands Midden", "6": "Brabant-Noord",
+    "7": "Friesland", "8": "Gelderland-Midden", "9": "Kennemerland",
+    "10": "Rotterdam-Rijnmond", "11": "Brabant-Zuidoost", "12": "Drenthe",
+    "13": "Gelderland-Zuid", "14": "Zuid-Holland-Zuid", "15": "Limburg-Noord",
+    "17": "IJsselland", "18": "Utrecht", "19": "Gooi en Vechtstreek", "20": "Zeeland",
+    "21": "Zuid-Limburg", "23": "Twente", "24": "Noord-Holland-Noord", "25": "Haaglanden",
+    "26": "Midden- en West-Brabant", "27": "Flevoland",
 }
 
 DISCIPLINES = {
-    "1": "Politie",
-    "2": "Brandweer",
-    "3": "Ambulance",
-    "4": "KNRM",
-    "5": "Lifeliner",
-    "7": "DARES",
+    "1": "Politie", "2": "Brandweer", "3": "Ambulance", "4": "KNRM", "5": "Lifeliner", "7": "DARES",
 }
-
 PRIORITIES = ["P1", "P2", "P3", "P4", "P5"]
 
 
 def _multi_selector(options: list[dict[str, str]]) -> selector.SelectSelector:
     return selector.SelectSelector(
-        selector.SelectSelectorConfig(
-            options=options,
-            multiple=True,
-            mode=selector.SelectSelectorMode.LIST,
-        )
+        selector.SelectSelectorConfig(options=options, multiple=True, mode=selector.SelectSelectorMode.LIST)
     )
 
-
-REGION_SELECTOR = _multi_selector(
-    [{"value": key, "label": value} for key, value in REGIONS.items()]
-)
-DISCIPLINE_SELECTOR = _multi_selector(
-    [{"value": key, "label": value} for key, value in DISCIPLINES.items()]
-)
-PRIORITY_SELECTOR = _multi_selector(
-    [{"value": value, "label": value} for value in PRIORITIES]
-)
+REGION_SELECTOR = _multi_selector([{"value": key, "label": value} for key, value in REGIONS.items()])
+DISCIPLINE_SELECTOR = _multi_selector([{"value": key, "label": value} for key, value in DISCIPLINES.items()])
+PRIORITY_SELECTOR = _multi_selector([{"value": value, "label": value} for value in PRIORITIES])
 
 
 def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     defaults = defaults or {}
-    return vol.Schema(
-        {
-            vol.Required("name", default=defaults.get("name", "P2000")): str,
-            vol.Optional("regions", default=defaults.get("regions", [])): REGION_SELECTOR,
-            vol.Optional("disciplines", default=defaults.get("disciplines", [])): DISCIPLINE_SELECTOR,
-            vol.Optional("priorities", default=defaults.get("priorities", [])): PRIORITY_SELECTOR,
-            vol.Optional("capcodes", default=defaults.get("capcodes", "")): str,
-            vol.Optional("include_text", default=defaults.get("include_text", "")): str,
-            vol.Optional("exclude_text", default=defaults.get("exclude_text", "")): str,
-            vol.Optional("incident_window", default=defaults.get("incident_window", 900)): vol.All(vol.Coerce(int), vol.Range(min=60, max=1800)),
-        }
-    )
+    return vol.Schema({
+        vol.Required("name", default=defaults.get("name", "P2000")): str,
+        vol.Optional("regions", default=defaults.get("regions", [])): REGION_SELECTOR,
+        vol.Optional("disciplines", default=defaults.get("disciplines", [])): DISCIPLINE_SELECTOR,
+        vol.Optional("priorities", default=defaults.get("priorities", [])): PRIORITY_SELECTOR,
+        vol.Optional("capcodes", default=defaults.get("capcodes", "")): str,
+        vol.Optional("include_text", default=defaults.get("include_text", "")): str,
+        vol.Optional("exclude_text", default=defaults.get("exclude_text", "")): str,
+        vol.Optional("incident_window", default=defaults.get("incident_window", 900)): vol.All(vol.Coerce(int), vol.Range(min=60, max=1800)),
+    })
 
 
 def _normalise(data: dict[str, Any]) -> dict[str, Any]:
@@ -107,7 +71,6 @@ def _normalise(data: dict[str, Any]) -> dict[str, Any]:
 
 class P2000ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle P2000 Monitor setup."""
-
     VERSION = 1
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
