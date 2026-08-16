@@ -1,10 +1,12 @@
-"""API-backed coordinator for P2000 Monitor v0.5.0."""
+"""API-backed coordinator for P2000 Monitor v0.5.2."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import logging
+import re
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import aiohttp
 from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -15,6 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 
 API_URL = "https://beta.alarmeringdroid.nl/api2/find/"
 API_TIMEOUT = 15
+LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 
 REGIONS: dict[str, str] = {
     "1": "Amsterdam-Amstelland", "2": "Groningen", "3": "Noord- en Oost-Gelderland",
@@ -23,7 +26,7 @@ REGIONS: dict[str, str] = {
     "10": "Rotterdam-Rijnmond", "11": "Brabant-Zuidoost", "12": "Drenthe",
     "13": "Gelderland-Zuid", "14": "Zuid-Holland-Zuid", "15": "Limburg-Noord",
     "17": "IJsselland", "18": "Utrecht", "19": "Gooi en Vechtstreek",
-    "20": "Zeeland", "21": "Limburg-Zuid", "23": "Twente",
+    "20": "Zeeland", "21": "Zuid-Limburg", "23": "Twente",
     "24": "Noord-Holland-Noord", "25": "Haaglanden", "26": "Midden- en West-Brabant",
     "27": "Flevoland",
 }
@@ -56,7 +59,7 @@ def _capcode_from_item(item: dict[str, Any]) -> str:
 
 
 def _region_id(item: dict[str, Any]) -> str:
-    raw = item.get("regio_id", item.get("region_id"))
+    raw = item.get("regioid", item.get("regio_id", item.get("region_id")))
     if raw is None:
         raw = item.get("regio")
     raw = _as_text(raw)
@@ -70,6 +73,7 @@ def _region_id(item: dict[str, Any]) -> str:
 
 
 def _published(item: dict[str, Any]) -> str:
+    """Return a stable ISO timestamp from all supported API date formats."""
     for key in ("published", "datetime", "datumtijd", "timestamp", "date"):
         value = item.get(key)
         if not value:
@@ -78,10 +82,36 @@ def _published(item: dict[str, Any]) -> str:
         try:
             dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=LOCAL_TZ)
             return dt.astimezone(timezone.utc).isoformat()
         except ValueError:
-            continue
+            pass
+
+    # AlarmeringDroid currently returns separate Dutch local-time fields:
+    # "datum": "16-08" and "tijd": "13:14".
+    date_text = _as_text(item.get("datum"))
+    time_text = _as_text(item.get("tijd"))
+    if date_text and time_text:
+        match = re.search(r"(\d{1,2})-(\d{1,2})", date_text)
+        time_match = re.search(r"(\d{1,2}):(\d{2})(?::(\d{2}))?", time_text)
+        if match and time_match:
+            day, month = int(match.group(1)), int(match.group(2))
+            hour, minute = int(time_match.group(1)), int(time_match.group(2))
+            second = int(time_match.group(3) or 0)
+            now_local = datetime.now(LOCAL_TZ)
+            year = now_local.year
+            try:
+                dt_local = datetime(year, month, day, hour, minute, second, tzinfo=LOCAL_TZ)
+            except ValueError:
+                dt_local = None
+            if dt_local is not None:
+                # The API omits the year. Around New Year's, a December message
+                # seen in January belongs to the previous year.
+                if dt_local - now_local > timedelta(days=2):
+                    dt_local = dt_local.replace(year=year - 1)
+                return dt_local.astimezone(timezone.utc).isoformat()
+
+    _LOGGER.warning("Geen geldige publicatiedatum gevonden voor P2000-melding: %s", item)
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -130,7 +160,7 @@ class P2000DataCoordinator(LegacyCoordinator):
     async def _fetch_api(self) -> list[dict[str, Any]]:
         payload = json.dumps(self.api_filter, ensure_ascii=False, separators=(",", ":"))
         headers = {
-            "User-Agent": "P2000-Monitor/0.5.0 Home Assistant",
+            "User-Agent": "P2000-Monitor/0.5.2 Home Assistant",
             "Accept": "application/json, text/plain, */*",
         }
         timeout = aiohttp.ClientTimeout(total=API_TIMEOUT)
