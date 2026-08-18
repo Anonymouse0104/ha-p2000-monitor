@@ -2,25 +2,25 @@
 
 Home Assistant integration for live Dutch P2000 emergency alerts using the structured **AlarmeringDroid API**.
 
-## v0.5.5
+## v0.5.7
 
-This release fixes the filtering path that could allow messages from the wrong safety region into a configured sensor and fixes sensors that stayed empty when a matching message was already present during startup.
+This release changes the data path so the integration fetches the complete AlarmeringDroid feed and applies all configured filters locally.
 
 ### Important changes
 
-- **AlarmeringDroid API only** in the active data path.
-- Region, service and capcode filters are enforced **locally as well as at the API**, so an API-side filtering problem cannot leak another region into a sensor.
-- Priority, include-text and exclude-text filters are applied locally.
-- Filter sensors now use the current API result instead of only `new_messages`.
-- Old split coordinator/P2KFlex code is removed from the active integration.
-- Additional logging shows the API filter, result count, normalized count and filtered count.
-- P2000 Monitor branding is included with `icon.png` and `logo.png`.
+- No unsupported JSON filter payload is sent to `/api2/find/`.
+- Region, service, capcode, priority, include-text and exclude-text filters are applied locally.
+- Capcodes returned by AlarmeringDroid as objects inside a `capcodes` array are parsed correctly.
+- A capcode filter matches when any capcode in a grouped message matches.
+- The newest matching message is selected by publication timestamp.
+- Existing Config Flow entries and incident history remain supported.
+- A P2000 Monitor integration icon is included as `icon.svg`.
 
 ## Install with HACS
 
 1. Open **HACS**.
 2. Find **P2000 Monitor**.
-3. Update to **v0.5.5**.
+3. Update to **v0.5.7**.
 4. Restart Home Assistant.
 5. Open **Settings → Devices & services → P2000 Monitor**.
 
@@ -51,7 +51,7 @@ Filters are combined with **AND** logic between categories. Text values can be s
 
 - Region: `Limburg-Noord`
 - Service: `Brandweer`
-- Include text: `Echt`
+- Capcodes: your selected Echt capcodes
 
 **Alle P1-meldingen**
 
@@ -66,8 +66,6 @@ The integration uses the IDs returned by the AlarmeringDroid API. Important Limb
 | 15 | Limburg-Noord |
 | 21 | Zuid-Limburg |
 | 23 | Twente |
-
-This mapping is deliberately kept in one place. The old P2KFlex 23/24 mapping is no longer used by the active integration.
 
 ## Services
 
@@ -85,10 +83,10 @@ This mapping is deliberately kept in one place. The old P2KFlex 23/24 mapping is
 The integration logs the filtering pipeline under the `p2000_monitor` logger. Useful entries include:
 
 ```text
-P2000 API filter: {"regios":["15"],"diensten":["2"]}
+P2000 API: fetching complete unfiltered feed; local filters=...
 P2000 API returned ... messages; normalized ...
-P2000 after filters: ... messages
-P2000 initialized: latest=... region=15/Limburg-Noord
+P2000 after local filters: ... messages (from ...)
+P2000 new message: ...
 ```
 
 If a message for Enschede (Twente, region 23) is returned while a sensor is configured for region 15, the local region filter removes it before the sensor sees it.
@@ -110,7 +108,7 @@ Existing YAML installations remain supported. New installations should use Confi
 
 ## Data source
 
-The active integration uses the structured AlarmeringDroid API and no longer relies on the P2KFlex mobile HTML parser.
+The active integration uses the structured AlarmeringDroid API and does not depend on the P2KFlex mobile HTML parser.
 
 ## License
 
