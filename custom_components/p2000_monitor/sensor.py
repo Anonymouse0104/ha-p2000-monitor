@@ -29,7 +29,7 @@ from .const import (
     MAX_HISTORY,
     SERVICE_INJECT_TEST_INCIDENT,
 )
-from .coordinator import P2000DataCoordinator, REGIONS, SERVICES, extract_priority
+from .coordinator import P2000DataCoordinator, REGIONS, SERVICES, extract_priority, normalize_incident_text, text_similarity
 
 DEFAULT_NAME = "P2000 Monitor"
 CONF_FILTERS = "filters"
@@ -90,18 +90,15 @@ def _filter_matches(message: dict[str, Any], config: dict[str, Any]) -> bool:
         if not priority or priority.upper() not in priorities:
             return False
 
-    # A P2000 alert can contain several capcodes. The first capcode is not
-    # necessarily the configured capcode, so match against all capcodes.
-    if capcodes:
-        message_capcodes = {
-            str(code).strip()
-            for code in (message.get("capcodes") or [])
-            if str(code).strip()
-        }
-        if not message_capcodes and message.get("capcode"):
-            message_capcodes.add(str(message.get("capcode")).strip())
-        if not message_capcodes.intersection(capcodes):
-            return False
+    message_capcodes = {
+        str(code).strip()
+        for code in (message.get("capcodes") or [])
+        if str(code).strip()
+    }
+    if not message_capcodes and message.get("capcode"):
+        message_capcodes.add(str(message.get("capcode")).strip())
+    if capcodes and not message_capcodes.intersection(capcodes):
+        return False
 
     lower = str(message.get("message", "")).lower()
     if include and not all(x in lower for x in include):
@@ -124,6 +121,79 @@ def _published_timestamp(message: dict[str, Any]) -> float:
 
 def _newest_first(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(messages, key=_published_timestamp, reverse=True)
+
+
+def _build_incident_history(messages: list[dict[str, Any]], incident_window: int) -> list[dict[str, Any]]:
+    """Build a visible incident history from the messages accepted by this sensor.
+
+    This deliberately works from the already filtered message set. That means a
+    VRLN sensor can never show an incident that belongs to VRZL, and the Echt
+    sensor can only show incidents containing one of its configured capcodes.
+    """
+    incidents: list[dict[str, Any]] = []
+    ordered = _newest_first(messages)
+
+    for message in ordered:
+        if message.get("test"):
+            continue
+        normalized = normalize_incident_text(message.get("message", ""))
+        published = _published_timestamp(message)
+        matched = None
+
+        for incident in incidents:
+            if str(incident.get("regio", "")) != str(message.get("regio", "")):
+                continue
+            if str(incident.get("discipline", "")).lower() != str(message.get("discipline", "")).lower():
+                continue
+            if abs(incident.get("last_seen_ts", 0.0) - published) > incident_window:
+                continue
+            old = str(incident.get("_normalized_text", ""))
+            if old == normalized or text_similarity(old, normalized) >= 0.70:
+                matched = incident
+                break
+
+        if matched is None:
+            matched = {
+                "incident_id": message.get("message_id", ""),
+                "message": message.get("message", ""),
+                "priority": extract_priority(message.get("message", "")),
+                "regio": message.get("regio", ""),
+                "regio_name": message.get("regio_name", ""),
+                "discipline": message.get("discipline", ""),
+                "dienstid": message.get("dienstid", ""),
+                "city": message.get("city", ""),
+                "latitude": message.get("latitude", ""),
+                "longitude": message.get("longitude", ""),
+                "first_seen": message.get("published", ""),
+                "last_seen": message.get("published", ""),
+                "message_count": 0,
+                "capcodes": [],
+                "messages": [],
+                "last_seen_ts": published,
+                "_normalized_text": normalized,
+            }
+            incidents.append(matched)
+
+        matched["message_count"] += 1
+        matched["last_seen"] = max(str(matched.get("last_seen", "")), str(message.get("published", "")))
+        matched["last_seen_ts"] = max(matched.get("last_seen_ts", 0.0), published)
+        for capcode in message.get("capcodes", []) or []:
+            capcode = str(capcode).strip()
+            if capcode and capcode not in matched["capcodes"]:
+                matched["capcodes"].append(capcode)
+        matched["messages"].append({
+            "message": message.get("message", ""),
+            "published": message.get("published", ""),
+            "capcodes": message.get("capcodes", []),
+            "message_id": message.get("message_id", ""),
+        })
+
+    incidents.sort(key=lambda item: item.get("last_seen_ts", 0.0), reverse=True)
+    for incident in incidents:
+        incident.pop("last_seen_ts", None)
+        incident.pop("_normalized_text", None)
+        incident["messages"] = incident["messages"][:MAX_HISTORY]
+    return incidents[:MAX_FILTER_INCIDENT_HISTORY]
 
 
 async def _build_coordinator(
@@ -149,9 +219,6 @@ async def async_setup_entry(
 ) -> None:
     data = dict(entry.data)
     name = data.get(CONF_NAME, entry.title)
-
-    # Existing entry named exactly "P2000 Monitor" is the national,
-    # unfiltered monitor. New installations can explicitly select this mode.
     all_services = bool(data.get(CONF_ALL_SERVICES, False))
     if CONF_ALL_SERVICES not in data and name == "P2000 Monitor":
         all_services = True
@@ -167,8 +234,6 @@ async def async_setup_entry(
         CONF_EXCLUDE_TEXT: data.get(CONF_EXCLUDE_TEXT, []),
     }
 
-    # Never use server-side JSON filtering. Fetch the complete feed and let
-    # the coordinator apply filters locally.
     api_filter = {} if all_services else {
         "regios": config[CONF_REGIONS],
         "diensten": config[CONF_DISCIPLINES],
@@ -201,7 +266,6 @@ async def async_setup_platform(
     coordinator = await _build_coordinator(hass, incident_window, exclude_capcodes, {})
 
     if not hass.services.has_service(DOMAIN, SERVICE_INJECT_TEST_INCIDENT):
-
         async def handle_test_incident(call):
             region = str(call.data.get(ATTR_TEST_REGION, "21"))
             region_name = call.data.get(ATTR_TEST_REGION_NAME, REGIONS.get(region, "Zuid-Limburg"))
@@ -293,13 +357,17 @@ class P2000FilterSensor(P2000BaseSensor):
         self._attr_unique_id = f"p2000_monitor_{entity_key}"
 
     def _matching_messages(self):
-        # Config-entry coordinators already contain locally filtered messages.
-        # Do not filter them a second time: the old second filter only looked
-        # at the first capcode and could discard valid Echt alerts.
-        messages = list(self._data().get("messages") or [])
-        return _newest_first(messages)
+        return _newest_first(list(self._data().get("messages") or []))
 
     def _matching_incidents(self):
+        messages = self._matching_messages()
+        visible_history = _build_incident_history(
+            messages,
+            int(self.coordinator.incident_window),
+        )
+        if visible_history:
+            return visible_history
+
         incidents = list(self._data().get("incidents", []) or [])
         return sorted(
             incidents,
