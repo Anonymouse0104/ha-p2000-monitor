@@ -40,9 +40,13 @@ PRIORITY_SELECTOR = _multi_selector([{"value": value, "label": value} for value 
 
 def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     defaults = defaults or {}
+    all_services_default = defaults.get(
+        CONF_ALL_SERVICES,
+        str(defaults.get("name", "")).strip().lower() == "p2000 monitor",
+    )
     return vol.Schema({
         vol.Required("name", default=defaults.get("name", "P2000")): str,
-        vol.Optional(CONF_ALL_SERVICES, default=defaults.get(CONF_ALL_SERVICES, False)): bool,
+        vol.Optional(CONF_ALL_SERVICES, default=all_services_default): bool,
         vol.Optional("regions", default=defaults.get("regions", [])): REGION_SELECTOR,
         vol.Optional("disciplines", default=defaults.get("disciplines", [])): DISCIPLINE_SELECTOR,
         vol.Optional("priorities", default=defaults.get("priorities", [])): PRIORITY_SELECTOR,
