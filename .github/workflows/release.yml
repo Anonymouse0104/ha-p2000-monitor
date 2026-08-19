@@ -10,15 +10,15 @@ permissions:
 
 jobs:
   release:
-    if: contains(github.event.head_commit.message, 'prepare v0.6.1')
+    if: contains(github.event.head_commit.message, 'prepare v0.6.2')
     runs-on: ubuntu-latest
     steps:
-      - name: Create v0.6.1 release
+      - name: Create v0.6.2 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.6.1 \
+          gh release create v0.6.2 \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "P2000 Monitor v0.6.1 – clean sensor configuration" \
-            --notes "## P2000 Monitor v0.6.1\n\n### Recommended sensor layout\n- P2000 Monitor: no filters, complete national feed.\n- P2000 Test: Limburg-Noord + Zuid-Limburg, Brandweer only.\n- Brandweer Echt: capcodes only.\n- Brandweer Limburg-Noord: region + Brandweer.\n- Brandweer Zuid-Limburg: region + Brandweer.\n- Brandweer Limburg: no longer recommended.\n\n### Other changes\n- Config Flow remains fully user-configurable.\n- Updated README with clean-install migration procedure.\n- No sensor.yaml configuration is required for Config Flow sensors.\n- Correct Limburg region names remain in use."
+            --title "P2000 Monitor v0.6.2 – visible incident history" \
+            --notes "## P2000 Monitor v0.6.2\n\n### Incident history\n- Filtered sensors now build a visible incident history directly from their already-filtered message feed.\n- VRLN, VRZL and Echt therefore show only incidents that actually match that sensor's filters.\n- Each incident includes message count, capcodes, timestamps, region, discipline and the underlying messages.\n- Up to 10 incidents are exposed through `incident_history` / `incidenten`.\n- The existing coordinator incident data remains available as a fallback.\n\n### Result\nYou can inspect the incident history directly in the attributes of the filtered sensor instead of opening individual entities for every message."
