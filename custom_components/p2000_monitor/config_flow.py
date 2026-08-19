@@ -9,6 +9,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 DOMAIN = "p2000_monitor"
+CONF_ALL_SERVICES = "all_services"
 
 REGIONS = {
     "1": "Amsterdam-Amstelland", "2": "Groningen", "3": "Noord- en Oost-Gelderland",
@@ -41,6 +42,7 @@ def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     defaults = defaults or {}
     return vol.Schema({
         vol.Required("name", default=defaults.get("name", "P2000")): str,
+        vol.Optional(CONF_ALL_SERVICES, default=defaults.get(CONF_ALL_SERVICES, False)): bool,
         vol.Optional("regions", default=defaults.get("regions", [])): REGION_SELECTOR,
         vol.Optional("disciplines", default=defaults.get("disciplines", [])): DISCIPLINE_SELECTOR,
         vol.Optional("priorities", default=defaults.get("priorities", [])): PRIORITY_SELECTOR,
@@ -59,6 +61,7 @@ def _normalise(data: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "name": str(data["name"]).strip() or "P2000",
+        CONF_ALL_SERVICES: bool(data.get(CONF_ALL_SERVICES, False)),
         "regions": [str(x) for x in data.get("regions", [])],
         "disciplines": [str(x) for x in data.get("disciplines", [])],
         "priorities": [str(x).upper() for x in data.get("priorities", [])],
