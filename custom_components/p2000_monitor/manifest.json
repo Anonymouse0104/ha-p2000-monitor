@@ -1,7 +1,7 @@
 {
   "domain": "p2000_monitor",
   "name": "P2000 Monitor",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "documentation": "https://github.com/Anonymouse0104/ha-p2000-monitor",
   "issue_tracker": "https://github.com/Anonymouse0104/ha-p2000-monitor/issues",
   "config_flow": true,
