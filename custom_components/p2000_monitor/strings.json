@@ -6,6 +6,7 @@
         "description": "Kies zelf welke P2000-meldingen deze sensor moet volgen. Alle filters zijn optioneel.",
         "data": {
           "name": "Sensornaam",
+          "all_services": "Toon alle meldingen",
           "regions": "Veiligheidsregio's",
           "disciplines": "Diensten",
           "priorities": "Prioriteiten",
@@ -15,6 +16,7 @@
           "incident_window": "Incident-koppeltijd (seconden)"
         },
         "data_description": {
+          "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters.",
           "capcodes": "Meerdere capcodes scheiden met komma of puntkomma.",
           "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; minstens één moet voorkomen.",
           "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
@@ -27,9 +29,10 @@
     "step": {
       "init": {
         "title": "P2000 Monitor filters wijzigen",
-        "description": "Pas de filters van deze P2000-sensor aan.",
+        "description": "Pas de filters van deze P2000-sensor aan. Zet 'Toon alle meldingen' aan voor een volledig landelijke monitor.",
         "data": {
           "name": "Sensornaam",
+          "all_services": "Toon alle meldingen",
           "regions": "Veiligheidsregio's",
           "disciplines": "Diensten",
           "priorities": "Prioriteiten",
@@ -39,6 +42,7 @@
           "incident_window": "Incident-koppeltijd (seconden)"
         },
         "data_description": {
+          "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters.",
           "capcodes": "Meerdere capcodes scheiden met komma of puntkomma.",
           "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma.",
           "exclude_text": "Meerdere woorden scheiden met komma of puntkomma.",
