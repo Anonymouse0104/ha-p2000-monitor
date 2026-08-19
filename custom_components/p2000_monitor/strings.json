@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "P2000 Monitor configureren",
-        "description": "Kies zelf welke P2000-meldingen deze sensor moet volgen. Alle filters zijn optioneel.",
+        "description": "Kies zelf welke P2000-meldingen deze sensor moet volgen. Alle filters zijn optioneel. Aanbevolen: P2000 Monitor zonder filters; P2000 Test op Limburg-Noord + Zuid-Limburg en Brandweer.",
         "data": {
           "name": "Sensornaam",
           "all_services": "Toon alle meldingen",
@@ -17,8 +17,8 @@
         },
         "data_description": {
           "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters.",
-          "capcodes": "Meerdere capcodes scheiden met komma of puntkomma.",
-          "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; minstens één moet voorkomen.",
+          "capcodes": "Meerdere capcodes scheiden met komma of puntkomma. Een melding wordt geaccepteerd als één van de capcodes overeenkomt.",
+          "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; alle opgegeven woorden moeten voorkomen.",
           "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
           "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden."
         }
@@ -43,9 +43,9 @@
         },
         "data_description": {
           "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters.",
-          "capcodes": "Meerdere capcodes scheiden met komma of puntkomma.",
-          "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma.",
-          "exclude_text": "Meerdere woorden scheiden met komma of puntkomma.",
+          "capcodes": "Meerdere capcodes scheiden met komma of puntkomma. Een melding wordt geaccepteerd als één van de capcodes overeenkomt.",
+          "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; alle opgegeven woorden moeten voorkomen.",
+          "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
           "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden."
         }
       }
