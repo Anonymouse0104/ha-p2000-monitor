@@ -10,15 +10,15 @@ permissions:
 
 jobs:
   release:
-    if: contains(github.event.head_commit.message, 'prepare v0.5.7')
+    if: contains(github.event.head_commit.message, 'prepare v0.6.0')
     runs-on: ubuntu-latest
     steps:
-      - name: Create v0.5.7 release
+      - name: Create v0.6.0 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.5.7 \
+          gh release create v0.6.0 \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "P2000 Monitor v0.5.7 – unfiltered API and local filtering" \
-            --notes "## P2000 Monitor v0.5.7\n\n### Fixes\n- Stop sending unsupported JSON filter payloads to the AlarmeringDroid /api2/find/ endpoint.\n- Fetch the complete feed and apply all configured filters locally.\n- Correctly parse API capcodes when they are returned as objects inside the capcodes array.\n- A capcode filter now matches when any capcode in a grouped P2000 message matches.\n- Keep newest-message selection based on publication timestamp.\n- Preserve Config Flow filtering, incident history and test injection.\n\n### Important\nThis release addresses the issue where valid incidents visible on the AlarmeringDroid monitor were missing from P2000 Monitor and filtered sensors.\n\n### Compatibility\n- Existing Config Flow configurations remain usable.\n- No sensor.yaml configuration is required for Config Flow entries."
+            --title "P2000 Monitor v0.6.0 – monitor and capcode filtering fixes" \
+            --notes "## P2000 Monitor v0.6.0\n\n### Fixes\n- Fetch the complete AlarmeringDroid feed and apply filters locally.\n- Add an explicit 'Toon alle meldingen' mode for a complete national monitor.\n- Existing entries named P2000 Monitor are migrated to the unfiltered monitor mode.\n- Fix capcode filtering for grouped alerts: any matching capcode now passes.\n- Do not apply the same Config Flow filter a second time in the sensor.\n- Keep newest-message selection based on publication timestamp.\n- Use correct Dutch Veiligheidsregio names, including Limburg-Noord and Zuid-Limburg.\n\n### Compatibility\n- Existing Config Flow configurations remain usable.\n- No sensor.yaml configuration is required for Config Flow entries.\n- Legacy YAML support remains available."
