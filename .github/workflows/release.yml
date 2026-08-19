@@ -10,15 +10,15 @@ permissions:
 
 jobs:
   release:
-    if: contains(github.event.head_commit.message, 'prepare v0.6.0')
+    if: contains(github.event.head_commit.message, 'prepare v0.6.1')
     runs-on: ubuntu-latest
     steps:
-      - name: Create v0.6.0 release
+      - name: Create v0.6.1 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.6.0 \
+          gh release create v0.6.1 \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "P2000 Monitor v0.6.0 – monitor and capcode filtering fixes" \
-            --notes "## P2000 Monitor v0.6.0\n\n### Fixes\n- Fetch the complete AlarmeringDroid feed and apply filters locally.\n- Add an explicit 'Toon alle meldingen' mode for a complete national monitor.\n- Existing entries named P2000 Monitor are migrated to the unfiltered monitor mode.\n- Fix capcode filtering for grouped alerts: any matching capcode now passes.\n- Do not apply the same Config Flow filter a second time in the sensor.\n- Keep newest-message selection based on publication timestamp.\n- Use correct Dutch Veiligheidsregio names, including Limburg-Noord and Zuid-Limburg.\n\n### Compatibility\n- Existing Config Flow configurations remain usable.\n- No sensor.yaml configuration is required for Config Flow entries.\n- Legacy YAML support remains available."
+            --title "P2000 Monitor v0.6.1 – clean sensor configuration" \
+            --notes "## P2000 Monitor v0.6.1\n\n### Recommended sensor layout\n- P2000 Monitor: no filters, complete national feed.\n- P2000 Test: Limburg-Noord + Zuid-Limburg, Brandweer only.\n- Brandweer Echt: capcodes only.\n- Brandweer Limburg-Noord: region + Brandweer.\n- Brandweer Zuid-Limburg: region + Brandweer.\n- Brandweer Limburg: no longer recommended.\n\n### Other changes\n- Config Flow remains fully user-configurable.\n- Updated README with clean-install migration procedure.\n- No sensor.yaml configuration is required for Config Flow sensors.\n- Correct Limburg region names remain in use."
