@@ -10,6 +10,7 @@ from typing import Any
 
 import aiohttp
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -408,10 +409,10 @@ class P2000DataCoordinator(DataUpdateCoordinator):
     async def _fetch_api(self):
         _LOGGER.info("P2000 API: fetching complete unfiltered feed; local filters=%s", self.api_filter)
         headers = {"User-Agent": "P2000-Monitor/0.5.7 Home Assistant", "Accept": "application/json, text/plain, */*"}
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(API_URL, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)) as response:
-                response.raise_for_status()
-                raw = await response.json(content_type=None)
+        session = async_get_clientsession(self.hass)
+        async with session.get(API_URL, headers=headers, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)) as response:
+            response.raise_for_status()
+            raw = await response.json(content_type=None)
         items = raw.get("meldingen") if isinstance(raw, dict) else None
         if items is None and isinstance(raw, dict):
             items = raw.get("items")
