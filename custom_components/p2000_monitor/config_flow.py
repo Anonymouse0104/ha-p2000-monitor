@@ -101,6 +101,9 @@ class P2000OptionsFlow(config_entries.OptionsFlow):
         current = dict(self.config_entry.data)
         if user_input is not None:
             data = _normalise(user_input)
+            # The settings live in entry.data. Updating data and title in one call
+            # triggers the reload listener once; returning the unchanged options
+            # keeps the options-flow finish from triggering a second reload.
             self.hass.config_entries.async_update_entry(self.config_entry, data=data, title=data["name"])
-            return self.async_create_entry(title="", data=data)
+            return self.async_create_entry(data=dict(self.config_entry.options))
         return self.async_show_form(step_id="init", data_schema=_schema(current))
