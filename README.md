@@ -143,9 +143,23 @@ A filtered sensor must never receive a message outside its configured region or 
 
 Useful debug messages are written under the `p2000_monitor` logger.
 
+## Events
+
+The feed is polled once for all sensors. Each message is deduplicated on its AlarmeringDroid id.
+
+| Event | Fired | Data |
+|---|---|---|
+| `p2000_monitor_new_message` | once per new message, for the whole feed | `message` |
+| `p2000_monitor_filter_match` | once per new message per sensor whose filters accept it | `message`, `filter`, `entry_id`, `sensor` |
+| `p2000_monitor_new_incident` / `p2000_monitor_incident_update` | per sensor | `incident`, `message`, `entry_id`, `sensor` |
+
+Use `p2000_monitor_filter_match` with a `sensor` condition for automations on one filtered sensor. `p2000_monitor_new_message` no longer carries a `sensor` field.
+
+The large attributes `meldingen`, `incidenten`, `incident_history`, `incident` and `capcodes` are available in the state machine but are not stored by the recorder.
+
 ## Legacy YAML
 
-Legacy YAML support remains for compatibility, but **new installations should use Config Flow**. Do not combine a legacy P2000 YAML sensor with the Config Flow sensors when testing the current integration.
+YAML configuration (`sensor: - platform: p2000_monitor`) is no longer supported. Remove it from `configuration.yaml`, then delete the orphaned `p2000_monitor_main` / `..._legacy_N` entities under **Settings → Entities**. The `inject_test_incident` service now works with Config Flow sensors.
 
 ## Data source
 
