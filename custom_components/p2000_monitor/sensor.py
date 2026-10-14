@@ -6,12 +6,18 @@ from typing import Any
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from . import entry_settings
 from .const import (
-    DEFAULT_INCIDENT_WINDOW,
+    CONF_ALL_SERVICES,
+    CONF_CAPCODES,
+    CONF_DISCIPLINES,
+    CONF_EXCLUDE_TEXT,
+    CONF_INCLUDE_TEXT,
+    CONF_PRIORITIES,
+    CONF_REGIONS,
     EVENT_FILTER_MATCH,
     EVENT_INCIDENT_UPDATE,
     EVENT_NEW_INCIDENT,
@@ -20,23 +26,14 @@ from .const import (
     MAX_HISTORY,
 )
 from .coordinator import (
-    P2000DataCoordinator,
     SERVICES,
+    P2000FilterProcessor,
     extract_priority,
     message_sort_key,
     normalize_incident_text,
     parse_published,
     text_similarity,
 )
-
-CONF_INCIDENT_WINDOW = "incident_window"
-CONF_REGIONS = "regions"
-CONF_DISCIPLINES = "disciplines"
-CONF_PRIORITIES = "priorities"
-CONF_CAPCODES = "capcodes"
-CONF_INCLUDE_TEXT = "include_text"
-CONF_EXCLUDE_TEXT = "exclude_text"
-CONF_ALL_SERVICES = "all_services"
 
 
 def _filter_matches(message: dict[str, Any], config: dict[str, Any]) -> bool:
@@ -162,67 +159,32 @@ def _build_incident_history(messages: list[dict[str, Any]], incident_window: int
     return incidents[:MAX_FILTER_INCIDENT_HISTORY]
 
 
-async def _build_coordinator(
-    hass: HomeAssistant,
-    incident_window: int,
-    exclude_capcodes: list[str],
-    api_filter: dict[str, Any] | None = None,
-) -> P2000DataCoordinator:
-    coordinator = P2000DataCoordinator(
-        hass=hass,
-        exclude_capcodes=exclude_capcodes,
-        incident_window=incident_window,
-        api_filter=api_filter or {},
-    )
-    await coordinator.async_config_entry_first_refresh()
-    return coordinator
-
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    data = dict(entry.data)
-    name = data.get(CONF_NAME, entry.title)
-    all_services = bool(data.get(CONF_ALL_SERVICES, False))
-    if CONF_ALL_SERVICES not in data and name == "P2000 Monitor":
-        all_services = True
-
-    config = {
-        CONF_NAME: name,
-        CONF_ALL_SERVICES: all_services,
-        CONF_REGIONS: data.get(CONF_REGIONS, []),
-        CONF_DISCIPLINES: data.get(CONF_DISCIPLINES, []),
-        CONF_PRIORITIES: data.get(CONF_PRIORITIES, []),
-        CONF_CAPCODES: data.get(CONF_CAPCODES, []),
-        CONF_INCLUDE_TEXT: data.get(CONF_INCLUDE_TEXT, []),
-        CONF_EXCLUDE_TEXT: data.get(CONF_EXCLUDE_TEXT, []),
-    }
-
-    api_filter = {} if all_services else {
-        "regios": config[CONF_REGIONS],
-        "diensten": config[CONF_DISCIPLINES],
-        "capcodes": config[CONF_CAPCODES],
-        "priorities": config[CONF_PRIORITIES],
-        "include_text": config[CONF_INCLUDE_TEXT],
-        "exclude_text": config[CONF_EXCLUDE_TEXT],
-    }
-
-    coordinator = await _build_coordinator(
-        hass,
-        int(data.get(CONF_INCIDENT_WINDOW, DEFAULT_INCIDENT_WINDOW)),
-        [],
-        api_filter,
-    )
-    entry.runtime_data = coordinator
+    processor: P2000FilterProcessor = entry.runtime_data
     entity_key = entry.unique_id or entry.entry_id
-    async_add_entities([P2000FilterSensor(coordinator, config, entity_key)], True)
+    async_add_entities([P2000FilterSensor(processor, entry_settings(entry), entity_key)])
 
 
-class P2000BaseSensor(CoordinatorEntity, SensorEntity):
+class P2000FilterSensor(SensorEntity):
+    _attr_should_poll = False
+
+    def __init__(self, processor: P2000FilterProcessor, config: dict[str, Any], entity_key: str) -> None:
+        self._processor = processor
+        self._config = config
+        self._entity_key = entity_key
+        self._attr_name = config.get(CONF_NAME, "P2000")
+        self._attr_unique_id = f"p2000_monitor_{entity_key}"
+
+    @property
+    def available(self) -> bool:
+        return self._processor.feed.last_update_success
+
     def _data(self):
-        return self.coordinator.data or {}
+        return self._processor.data or {}
 
     @staticmethod
     def _icon_for(message):
@@ -233,15 +195,6 @@ class P2000BaseSensor(CoordinatorEntity, SensorEntity):
             "Lifeliner": "mdi:helicopter",
         }.get(message.get("discipline"), "mdi:radio-tower")
 
-
-class P2000FilterSensor(P2000BaseSensor):
-    def __init__(self, coordinator, config, entity_key):
-        super().__init__(coordinator)
-        self._config = config
-        self._entity_key = entity_key
-        self._attr_name = config.get(CONF_NAME, "P2000")
-        self._attr_unique_id = f"p2000_monitor_{entity_key}"
-
     def _matching_messages(self):
         return _newest_first(list(self._data().get("messages") or []))
 
@@ -249,7 +202,7 @@ class P2000FilterSensor(P2000BaseSensor):
         messages = self._matching_messages()
         visible_history = _build_incident_history(
             messages,
-            int(self.coordinator.incident_window),
+            int(self._processor.incident_window),
         )
         if visible_history:
             return visible_history
@@ -304,9 +257,10 @@ class P2000FilterSensor(P2000BaseSensor):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        self.async_on_remove(self.coordinator.async_add_listener(self._coordinator_updated))
+        self.async_on_remove(self._processor.async_add_listener(self._handle_processor_update))
 
-    def _coordinator_updated(self):
+    @callback
+    def _handle_processor_update(self):
         data = self._data()
         for message in data.get("new_messages", []):
             self.hass.bus.async_fire(
@@ -328,3 +282,5 @@ class P2000FilterSensor(P2000BaseSensor):
                     "sensor": self.entity_id,
                 },
             )
+        self.async_write_ha_state()
+

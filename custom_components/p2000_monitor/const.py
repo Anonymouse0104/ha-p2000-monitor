@@ -2,6 +2,18 @@
 
 DOMAIN = "p2000_monitor"
 
+# hass.data key of the feed coordinator shared by all config entries.
+DATA_FEED = f"{DOMAIN}_feed"
+
+CONF_ALL_SERVICES = "all_services"
+CONF_REGIONS = "regions"
+CONF_DISCIPLINES = "disciplines"
+CONF_PRIORITIES = "priorities"
+CONF_CAPCODES = "capcodes"
+CONF_INCLUDE_TEXT = "include_text"
+CONF_EXCLUDE_TEXT = "exclude_text"
+CONF_INCIDENT_WINDOW = "incident_window"
+
 DEFAULT_SCAN_INTERVAL = 10
 
 EVENT_NEW_MESSAGE = "p2000_monitor_new_message"
