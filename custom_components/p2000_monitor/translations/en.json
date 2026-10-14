@@ -1,0 +1,88 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add P2000 Monitor",
+        "description": "Set up the first sensor. Afterwards use 'Add sensor' to add as many sensors as you like, each with its own regions, services and filters.",
+        "data": {
+          "name": "Sensor name",
+          "all_services": "Show all alerts",
+          "regions": "Safety regions",
+          "disciplines": "Services",
+          "priorities": "Priorities",
+          "capcodes": "Capcodes",
+          "include_text": "Text must contain",
+          "exclude_text": "Text must not contain",
+          "incident_window": "Incident grouping window (seconds)"
+        },
+        "data_description": {
+          "all_services": "Shows every P2000 alert in the Netherlands and ignores the region, service, priority and capcode filters. Text filters still apply.",
+          "capcodes": "Separate multiple capcodes with a comma or semicolon. An alert matches if any of its capcodes matches.",
+          "include_text": "Separate multiple terms with a comma or semicolon; an alert matches if it contains any of them.",
+          "exclude_text": "Separate multiple terms with a comma or semicolon; an alert must contain none of them.",
+          "incident_window": "How long follow-up alerts are grouped into the same incident."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "P2000 Monitor is already added. Use 'Add sensor' for another sensor."
+    }
+  },
+  "config_subentries": {
+    "sensor": {
+      "entry_type": "Sensor",
+      "initiate_flow": {
+        "user": "Add sensor"
+      },
+      "step": {
+        "user": {
+          "title": "Add P2000 sensor",
+          "description": "Choose which alerts this sensor follows. Values within one filter are OR, different filters are AND. Leave a filter empty to not filter on it.",
+          "data": {
+            "name": "Sensor name",
+            "all_services": "Show all alerts",
+            "regions": "Safety regions",
+            "disciplines": "Services",
+            "priorities": "Priorities",
+            "capcodes": "Capcodes",
+            "include_text": "Text must contain",
+            "exclude_text": "Text must not contain",
+            "incident_window": "Incident grouping window (seconds)"
+          },
+          "data_description": {
+            "all_services": "Shows every P2000 alert in the Netherlands and ignores the region, service, priority and capcode filters. Text filters still apply.",
+            "capcodes": "Separate multiple capcodes with a comma or semicolon. An alert matches if any of its capcodes matches.",
+            "include_text": "Separate multiple terms with a comma or semicolon; an alert matches if it contains any of them.",
+            "exclude_text": "Separate multiple terms with a comma or semicolon; an alert must contain none of them.",
+            "incident_window": "How long follow-up alerts are grouped into the same incident."
+          }
+        },
+        "reconfigure": {
+          "title": "Change P2000 sensor",
+          "description": "Change this sensor's filters. Values within one filter are OR, different filters are AND.",
+          "data": {
+            "name": "Sensor name",
+            "all_services": "Show all alerts",
+            "regions": "Safety regions",
+            "disciplines": "Services",
+            "priorities": "Priorities",
+            "capcodes": "Capcodes",
+            "include_text": "Text must contain",
+            "exclude_text": "Text must not contain",
+            "incident_window": "Incident grouping window (seconds)"
+          },
+          "data_description": {
+            "all_services": "Shows every P2000 alert in the Netherlands and ignores the region, service, priority and capcode filters. Text filters still apply.",
+            "capcodes": "Separate multiple capcodes with a comma or semicolon. An alert matches if any of its capcodes matches.",
+            "include_text": "Separate multiple terms with a comma or semicolon; an alert matches if it contains any of them.",
+            "exclude_text": "Separate multiple terms with a comma or semicolon; an alert must contain none of them.",
+            "incident_window": "How long follow-up alerts are grouped into the same incident."
+          }
+        }
+      },
+      "error": {
+        "name_exists": "A sensor with this name already exists."
+      }
+    }
+  }
+}

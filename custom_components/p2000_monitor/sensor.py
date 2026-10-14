@@ -10,8 +10,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from . import entry_settings
-from .const import AVAILABILITY_GRACE, MAX_FILTER_INCIDENT_HISTORY, MAX_HISTORY
+from . import sensor_settings
+from .const import AVAILABILITY_GRACE, CONF_ENTITY_KEY, MAX_FILTER_INCIDENT_HISTORY, MAX_HISTORY
 
 # Home Assistant rejects states longer than 255 characters.
 MAX_STATE_LENGTH = 255
@@ -112,9 +112,15 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    processor: P2000FilterProcessor = entry.runtime_data
-    entity_key = entry.unique_id or entry.entry_id
-    async_add_entities([P2000FilterSensor(processor, entry_settings(entry), entity_key)])
+    """Add one sensor per sensor subentry."""
+    for subentry_id, processor in entry.runtime_data.items():
+        subentry = entry.subentries[subentry_id]
+        # Migrated sensors keep the unique_id they had as a separate entry.
+        entity_key = subentry.data.get(CONF_ENTITY_KEY, subentry_id)
+        async_add_entities(
+            [P2000FilterSensor(processor, sensor_settings(subentry.data, subentry.title), entity_key)],
+            config_subentry_id=subentry_id,
+        )
 
 
 class P2000FilterSensor(SensorEntity):

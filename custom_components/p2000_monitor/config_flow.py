@@ -1,31 +1,44 @@
-"""Config flow for P2000 Monitor."""
+"""Config flow for P2000 Monitor.
+
+The integration is added once. Each sensor is a subentry ("Sensor toevoegen")
+with its own filters, and can be changed later through "Wijzigen".
+"""
 from __future__ import annotations
 
 from typing import Any
 
 import voluptuous as vol
-from homeassistant import config_entries
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    ConfigSubentryFlow,
+    SubentryFlowResult,
+)
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
-DOMAIN = "p2000_monitor"
-CONF_ALL_SERVICES = "all_services"
-
-REGIONS = {
-    "1": "Amsterdam-Amstelland", "2": "Groningen", "3": "Noord- en Oost-Gelderland",
-    "4": "Zaanstreek-Waterland", "5": "Hollands Midden", "6": "Brabant-Noord",
-    "7": "Friesland", "8": "Gelderland-Midden", "9": "Kennemerland",
-    "10": "Rotterdam-Rijnmond", "11": "Brabant-Zuidoost", "12": "Drenthe",
-    "13": "Gelderland-Zuid", "14": "Zuid-Holland-Zuid", "15": "Limburg-Noord",
-    "17": "IJsselland", "18": "Utrecht", "19": "Gooi en Vechtstreek", "20": "Zeeland",
-    "21": "Zuid-Limburg", "23": "Twente", "24": "Noord-Holland-Noord", "25": "Haaglanden",
-    "26": "Midden- en West-Brabant", "27": "Flevoland",
-}
+from .const import (
+    CONF_ALL_SERVICES,
+    CONF_CAPCODES,
+    CONF_DISCIPLINES,
+    CONF_EXCLUDE_TEXT,
+    CONF_INCIDENT_WINDOW,
+    CONF_INCLUDE_TEXT,
+    CONF_PRIORITIES,
+    CONF_REGIONS,
+    DEFAULT_INCIDENT_WINDOW,
+    DOMAIN,
+    HUB_TITLE,
+    SUBENTRY_SENSOR,
+)
+from .coordinator import REGIONS
 
 DISCIPLINES = {
     "1": "Politie", "2": "Brandweer", "3": "Ambulance", "4": "KNRM", "5": "Lifeliner", "7": "DARES",
 }
 PRIORITIES = ["P1", "P2", "P3", "P4", "P5"]
+TEXT_LIST_FIELDS = (CONF_CAPCODES, CONF_INCLUDE_TEXT, CONF_EXCLUDE_TEXT)
 
 
 def _multi_selector(options: list[dict[str, str]]) -> selector.SelectSelector:
@@ -33,27 +46,36 @@ def _multi_selector(options: list[dict[str, str]]) -> selector.SelectSelector:
         selector.SelectSelectorConfig(options=options, multiple=True, mode=selector.SelectSelectorMode.LIST)
     )
 
-REGION_SELECTOR = _multi_selector([{"value": key, "label": value} for key, value in REGIONS.items()])
+
+REGION_SELECTOR = _multi_selector(
+    [{"value": key, "label": value} for key, value in sorted(REGIONS.items(), key=lambda kv: kv[1])]
+)
 DISCIPLINE_SELECTOR = _multi_selector([{"value": key, "label": value} for key, value in DISCIPLINES.items()])
 PRIORITY_SELECTOR = _multi_selector([{"value": value, "label": value} for value in PRIORITIES])
 
 
 def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
-    defaults = defaults or {}
+    defaults = dict(defaults or {})
+    # Stored as lists, edited as comma separated text.
+    for key in TEXT_LIST_FIELDS:
+        if isinstance(defaults.get(key), list):
+            defaults[key] = ", ".join(defaults[key])
     all_services_default = defaults.get(
         CONF_ALL_SERVICES,
-        str(defaults.get("name", "")).strip().lower() == "p2000 monitor",
+        str(defaults.get("name", "")).strip().lower() == HUB_TITLE.lower(),
     )
     return vol.Schema({
         vol.Required("name", default=defaults.get("name", "P2000")): str,
         vol.Optional(CONF_ALL_SERVICES, default=all_services_default): bool,
-        vol.Optional("regions", default=defaults.get("regions", [])): REGION_SELECTOR,
-        vol.Optional("disciplines", default=defaults.get("disciplines", [])): DISCIPLINE_SELECTOR,
-        vol.Optional("priorities", default=defaults.get("priorities", [])): PRIORITY_SELECTOR,
-        vol.Optional("capcodes", default=defaults.get("capcodes", "")): str,
-        vol.Optional("include_text", default=defaults.get("include_text", "")): str,
-        vol.Optional("exclude_text", default=defaults.get("exclude_text", "")): str,
-        vol.Optional("incident_window", default=defaults.get("incident_window", 900)): vol.All(vol.Coerce(int), vol.Range(min=60, max=1800)),
+        vol.Optional(CONF_REGIONS, default=defaults.get(CONF_REGIONS, [])): REGION_SELECTOR,
+        vol.Optional(CONF_DISCIPLINES, default=defaults.get(CONF_DISCIPLINES, [])): DISCIPLINE_SELECTOR,
+        vol.Optional(CONF_PRIORITIES, default=defaults.get(CONF_PRIORITIES, [])): PRIORITY_SELECTOR,
+        vol.Optional(CONF_CAPCODES, default=defaults.get(CONF_CAPCODES, "")): str,
+        vol.Optional(CONF_INCLUDE_TEXT, default=defaults.get(CONF_INCLUDE_TEXT, "")): str,
+        vol.Optional(CONF_EXCLUDE_TEXT, default=defaults.get(CONF_EXCLUDE_TEXT, "")): str,
+        vol.Optional(
+            CONF_INCIDENT_WINDOW, default=defaults.get(CONF_INCIDENT_WINDOW, DEFAULT_INCIDENT_WINDOW)
+        ): vol.All(vol.Coerce(int), vol.Range(min=60, max=1800)),
     })
 
 
@@ -66,44 +88,74 @@ def _normalise(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "name": str(data["name"]).strip() or "P2000",
         CONF_ALL_SERVICES: bool(data.get(CONF_ALL_SERVICES, False)),
-        "regions": [str(x) for x in data.get("regions", [])],
-        "disciplines": [str(x) for x in data.get("disciplines", [])],
-        "priorities": [str(x).upper() for x in data.get("priorities", [])],
-        "capcodes": split(data.get("capcodes")),
-        "include_text": split(data.get("include_text")),
-        "exclude_text": split(data.get("exclude_text")),
-        "incident_window": int(data.get("incident_window", 900)),
+        CONF_REGIONS: [str(x) for x in data.get(CONF_REGIONS, [])],
+        CONF_DISCIPLINES: [str(x) for x in data.get(CONF_DISCIPLINES, [])],
+        CONF_PRIORITIES: [str(x).upper() for x in data.get(CONF_PRIORITIES, [])],
+        CONF_CAPCODES: split(data.get(CONF_CAPCODES)),
+        CONF_INCLUDE_TEXT: split(data.get(CONF_INCLUDE_TEXT)),
+        CONF_EXCLUDE_TEXT: split(data.get(CONF_EXCLUDE_TEXT)),
+        CONF_INCIDENT_WINDOW: int(data.get(CONF_INCIDENT_WINDOW, DEFAULT_INCIDENT_WINDOW)),
     }
 
 
-class P2000ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle P2000 Monitor setup."""
-    VERSION = 1
+class P2000ConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Add P2000 Monitor together with its first sensor."""
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None):
+    VERSION = 2
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        await self.async_set_unique_id(DOMAIN)
+        self._abort_if_unique_id_configured()
         if user_input is not None:
             data = _normalise(user_input)
-            await self.async_set_unique_id(f"p2000_monitor_{data['name'].lower()}")
-            self._abort_if_unique_id_configured()
-            return self.async_create_entry(title=data["name"], data=data)
-        return self.async_show_form(step_id="user", data_schema=_schema())
+            return self.async_create_entry(
+                title=HUB_TITLE,
+                data={},
+                subentries=[
+                    {"subentry_type": SUBENTRY_SENSOR, "title": data["name"], "data": data, "unique_id": None}
+                ],
+            )
+        return self.async_show_form(
+            step_id="user", data_schema=_schema({"name": HUB_TITLE, CONF_ALL_SERVICES: True})
+        )
 
-    @staticmethod
+    @classmethod
     @callback
-    def async_get_options_flow(config_entry):
-        return P2000OptionsFlow()
+    def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
+        return {SUBENTRY_SENSOR: P2000SensorSubentryFlow}
 
 
-class P2000OptionsFlow(config_entries.OptionsFlow):
-    """Allow filters to be changed after installation."""
+class P2000SensorSubentryFlow(ConfigSubentryFlow):
+    """Add or change one P2000 sensor."""
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None):
-        current = dict(self.config_entry.data)
+    def _name_taken(self, name: str, own_subentry_id: str | None = None) -> bool:
+        return any(
+            sub.title.strip().lower() == name.lower()
+            for sub_id, sub in self._get_entry().subentries.items()
+            if sub_id != own_subentry_id
+        )
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
             data = _normalise(user_input)
-            # The settings live in entry.data. Updating data and title in one call
-            # triggers the reload listener once; returning the unchanged options
-            # keeps the options-flow finish from triggering a second reload.
-            self.hass.config_entries.async_update_entry(self.config_entry, data=data, title=data["name"])
-            return self.async_create_entry(data=dict(self.config_entry.options))
-        return self.async_show_form(step_id="init", data_schema=_schema(current))
+            if self._name_taken(data["name"]):
+                errors["name"] = "name_exists"
+            else:
+                return self.async_create_entry(title=data["name"], data=data)
+        return self.async_show_form(step_id="user", data_schema=_schema(user_input), errors=errors)
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        subentry = self._get_reconfigure_subentry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data = _normalise(user_input)
+            if self._name_taken(data["name"], subentry.subentry_id):
+                errors["name"] = "name_exists"
+            else:
+                # Keep migration keys (entity_key, storage_id) next to the new filters.
+                return self.async_update_and_abort(
+                    self._get_entry(), subentry, title=data["name"], data={**subentry.data, **data}
+                )
+        defaults = user_input or {"name": subentry.title, **subentry.data}
+        return self.async_show_form(step_id="reconfigure", data_schema=_schema(defaults), errors=errors)
