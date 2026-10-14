@@ -27,6 +27,7 @@ from .const import (
     EVENT_NEW_MESSAGE,
     MAX_BACKOFF,
     MAX_EVENT_AGE,
+    MAX_HISTORY,
     MAX_INCIDENT_HISTORY,
     MAX_SEEN_MESSAGES,
     STORAGE_KEY,
@@ -368,6 +369,8 @@ class P2000FilterProcessor:
         }
         self.data: dict[str, Any] = {}
         self._incidents: deque[dict[str, Any]] = deque(maxlen=MAX_INCIDENT_HISTORY)
+        # Accepted messages by id, newest first, kept beyond the short API feed window.
+        self._history: dict[str, dict[str, Any]] = {}
         self._store = Store(hass, STORAGE_VERSION, storage_key(entry_id))
         self._listeners: list[Callable[[], None]] = []
         self._unsub_feed: Callable[[], None] | None = None
@@ -380,11 +383,16 @@ class P2000FilterProcessor:
         self._apply(self.feed.data or {}, process_new=False)
         self._unsub_feed = self.feed.async_add_listener(self._handle_feed_update)
 
-    @callback
-    def async_stop(self) -> None:
+    async def async_stop(self) -> None:
+        """Stop following the feed and write any pending history right away.
+
+        A delayed save is only flushed automatically at HA shutdown, not when an
+        entry unloads for a reload, so it would otherwise be lost.
+        """
         if self._unsub_feed:
             self._unsub_feed()
             self._unsub_feed = None
+        await self._store.async_save(self._data_to_save())
 
     @callback
     def async_add_listener(self, update_callback: Callable[[], None]) -> Callable[[], None]:
@@ -413,14 +421,34 @@ class P2000FilterProcessor:
     def _accepts(self, message: dict[str, Any]) -> bool:
         return not self._is_excluded(message) and self._passes_filters(message)
 
+    def _merge_history(self, messages: list[dict[str, Any]]) -> bool:
+        """Add accepted messages to this entry's own history; return whether it changed.
+
+        The API feed only holds the latest ~30 national messages (often under
+        half an hour), so the sensor keeps its own history instead of showing
+        only what is still in the feed.
+        """
+        added = False
+        for message in messages:
+            message_id = message.get("message_id")
+            if message_id and message_id not in self._history:
+                self._history[message_id] = message
+                added = True
+        if added:
+            ordered = sorted(self._history.values(), key=message_sort_key, reverse=True)[:MAX_HISTORY]
+            self._history = {m["message_id"]: m for m in ordered}
+        return added
+
     @callback
     def _apply(self, feed_data: dict[str, Any], process_new: bool) -> None:
-        messages = [m for m in feed_data.get("messages") or [] if self._accepts(m)]
+        accepted = [m for m in feed_data.get("messages") or [] if self._accepts(m)]
         new_messages = [m for m in feed_data.get("new_messages") or [] if self._accepts(m)] if process_new else []
-        _LOGGER.debug("P2000 after local filters: %s messages (from %s)", len(messages), len(feed_data.get("messages") or []))
+        _LOGGER.debug("P2000 after local filters: %s messages (from %s)", len(accepted), len(feed_data.get("messages") or []))
+        history_changed = self._merge_history(accepted)
         incident_changes = self._process_live_batch(new_messages)
-        if incident_changes:
+        if history_changed or incident_changes:
             self._store.async_delay_save(self._data_to_save, 10)
+        messages = list(self._history.values())
         self.data = {
             "latest": messages[0] if messages else None,
             "messages": messages,
@@ -461,10 +489,21 @@ class P2000FilterProcessor:
             incident.setdefault("message_ids", [])
             incident.setdefault("alarm_count", len(incident["capcodes"]))
             self._incidents.append(incident)
+        # Re-check stored messages: the filters may have changed in the options flow.
+        self._merge_history(
+            [
+                m
+                for m in (stored or {}).get("messages", [])
+                if isinstance(m, dict) and m.get("message_id") and not m.get("test") and self._accepts(m)
+            ]
+        )
 
     @callback
     def _data_to_save(self) -> dict[str, Any]:
-        return {"incidents": [self._public_incident(x) for x in self._incidents if not x.get("test")][:MAX_INCIDENT_HISTORY]}
+        return {
+            "incidents": [self._public_incident(x) for x in self._incidents if not x.get("test")][:MAX_INCIDENT_HISTORY],
+            "messages": [m for m in self._history.values() if not m.get("test")],
+        }
 
     def _is_excluded(self, message):
         return bool(_message_capcodes(message) & self.exclude_capcodes)
