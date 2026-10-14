@@ -2,17 +2,17 @@
 from __future__ import annotations
 
 from collections import deque
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import hashlib
 import logging
 import re
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DEFAULT_INCIDENT_WINDOW,
@@ -27,7 +27,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 API_URL = "https://beta.alarmeringdroid.nl/api2/find/"
 API_TIMEOUT = 15
-LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
+LOCAL_TZ = dt_util.get_time_zone("Europe/Amsterdam")
 REGIONS = {
     "1": "Amsterdam-Amstelland", "2": "Groningen", "3": "Noord- en Oost-Gelderland",
     "4": "Zaanstreek-Waterland", "5": "Hollands Midden", "6": "Brabant-Noord",
@@ -95,32 +95,64 @@ def _region_id(item: dict[str, Any]) -> str:
 
 
 def _published(item: dict[str, Any]) -> str:
+    """Return the publication time as a UTC ISO string, or "" when unknown.
+
+    The feed reports local Dutch time as separate 'datum' (dd-mm) and 'tijd'
+    (hh:mm) fields; full timestamps are honoured when present.
+    """
     for key in ("published", "datetime", "datumtijd", "timestamp", "date"):
-        value = item.get(key)
+        value = _as_text(item.get(key))
         if not value:
             continue
-        try:
-            dt = datetime.fromisoformat(_as_text(value).replace("Z", "+00:00"))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=LOCAL_TZ)
-            return dt.astimezone(timezone.utc).isoformat()
-        except ValueError:
-            pass
-    date_match = re.search(r"(\d{1,2})-(\d{1,2})", _as_text(item.get("datum")))
+        if value.replace(".", "", 1).isdigit():
+            try:
+                return dt_util.utc_from_timestamp(float(value)).isoformat()
+            except (OverflowError, OSError, ValueError):
+                continue
+        dt = dt_util.parse_datetime(value)
+        if dt is None:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=LOCAL_TZ)
+        return dt_util.as_utc(dt).isoformat()
+    date_match = re.search(r"(\d{1,2})-(\d{1,2})(?:-(\d{4}))?", _as_text(item.get("datum")))
     time_match = re.search(r"(\d{1,2}):(\d{2})(?::(\d{2}))?", _as_text(item.get("tijd")))
     if date_match and time_match:
         day, month = int(date_match.group(1)), int(date_match.group(2))
         hour, minute = int(time_match.group(1)), int(time_match.group(2))
         second = int(time_match.group(3) or 0)
-        now = datetime.now(LOCAL_TZ)
+        now = dt_util.now(LOCAL_TZ)
+        year = int(date_match.group(3) or now.year)
         try:
-            dt = datetime(now.year, month, day, hour, minute, second, tzinfo=LOCAL_TZ)
-            if dt - now > timedelta(days=2):
+            dt = datetime(year, month, day, hour, minute, second, tzinfo=LOCAL_TZ)
+            if not date_match.group(3) and dt - now > timedelta(days=2):
                 dt = dt.replace(year=now.year - 1)
-            return dt.astimezone(timezone.utc).isoformat()
+            return dt_util.as_utc(dt).isoformat()
         except ValueError:
             pass
-    return datetime.now(timezone.utc).isoformat()
+    # Never fall back to now(): that would make the message look new on every poll.
+    return ""
+
+
+def parse_published(value: Any) -> datetime | None:
+    """Parse a normalized 'published' value into an aware UTC datetime."""
+    if not value:
+        return None
+    dt = dt_util.parse_datetime(str(value))
+    if dt is None:
+        return None
+    return dt_util.as_utc(dt if dt.tzinfo else dt.replace(tzinfo=dt_util.UTC))
+
+
+def message_sort_key(message: dict[str, Any]) -> tuple[float, int]:
+    """Sort key for newest-first ordering: publication time, then API id.
+
+    The feed only has minute resolution, so the monotonically increasing API
+    id breaks ties between messages published in the same minute.
+    """
+    published = parse_published(message.get("published"))
+    api_id = str(message.get("api_id") or "")
+    return (published.timestamp() if published else 0.0, int(api_id) if api_id.isdigit() else 0)
 
 
 def _flatten_items(items: list[Any]) -> list[dict[str, Any]]:
@@ -204,12 +236,7 @@ class P2000DataCoordinator(DataUpdateCoordinator):
                 continue
             incident = dict(raw)
             incident["_normalized_text"] = normalize_incident_text(incident.get("message", ""))
-            try:
-                last_seen = datetime.fromisoformat(incident.get("last_seen", ""))
-                last_seen = last_seen if last_seen.tzinfo else last_seen.replace(tzinfo=timezone.utc)
-            except (TypeError, ValueError):
-                last_seen = datetime.now(timezone.utc)
-            incident["_last_seen_dt"] = last_seen
+            incident["_last_seen_dt"] = parse_published(incident.get("last_seen")) or dt_util.utcnow()
             incident.setdefault("capcodes", [])
             incident.setdefault("message_ids", [])
             incident.setdefault("alarm_count", len(incident["capcodes"]))
@@ -343,7 +370,7 @@ class P2000DataCoordinator(DataUpdateCoordinator):
             else:
                 group.append(message)
         for group in groups:
-            now = datetime.now(timezone.utc)
+            now = dt_util.utcnow()
             incident = self._find_matching_incident(group[0], now)
             if incident:
                 changed = False
@@ -361,7 +388,7 @@ class P2000DataCoordinator(DataUpdateCoordinator):
 
     async def async_inject_test_messages(self, messages):
         accepted = []
-        batch_id = hashlib.sha256(datetime.now(timezone.utc).isoformat().encode()).hexdigest()[:12]
+        batch_id = hashlib.sha256(dt_util.utcnow().isoformat().encode()).hexdigest()[:12]
         for index, original in enumerate(messages):
             message = dict(original)
             message["published"] = f"TEST-{batch_id}-{index}"
@@ -408,7 +435,7 @@ class P2000DataCoordinator(DataUpdateCoordinator):
         original_count = len(messages)
         messages = [m for m in messages if not self._is_excluded(m)]
         messages = [m for m in messages if self._passes_filters(m)]
-        messages.sort(key=lambda m: self._parse_published(m.get("published")) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        messages.sort(key=message_sort_key, reverse=True)
         latest = messages[0] if messages else None
         _LOGGER.info("P2000 after local filters: %s messages (from %s)", len(messages), original_count)
         if not self._initialized:
@@ -416,11 +443,11 @@ class P2000DataCoordinator(DataUpdateCoordinator):
                 self._remember_message_id(message.get("message_id", ""))
             self._initialized = True
             return {"latest": latest, "messages": messages, "new_messages": [], "incident_changes": [], "incidents": self._current_incidents()}
-        now = datetime.now(timezone.utc)
+        now = dt_util.utcnow()
         live_horizon = max(self.incident_window, 900)
         live_new = []
         for message in messages:
-            published = self._parse_published(message.get("published"))
+            published = parse_published(message.get("published"))
             age = (now - published).total_seconds() if published else 0
             if published is not None and (age < -300 or age > live_horizon):
                 continue
@@ -434,13 +461,3 @@ class P2000DataCoordinator(DataUpdateCoordinator):
         if incident_changes:
             await self.async_save_incident_history()
         return {"latest": latest, "messages": messages, "new_messages": live_new, "incident_changes": incident_changes, "incidents": self._current_incidents()}
-
-    @staticmethod
-    def _parse_published(value):
-        if not value:
-            return None
-        try:
-            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-            return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-        except ValueError:
-            return None
