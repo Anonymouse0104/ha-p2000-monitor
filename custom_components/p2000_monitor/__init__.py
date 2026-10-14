@@ -31,6 +31,7 @@ from .const import (
     DATA_FEED,
     DEFAULT_INCIDENT_WINDOW,
     DOMAIN,
+    EVENT_NEW_MESSAGE,
     SERVICE_INJECT_TEST_INCIDENT,
     STORAGE_VERSION,
 )
@@ -75,6 +76,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             }
             for index, capcode in enumerate(call.data[ATTR_TEST_CAPCODES])
         ]
+        for message in messages:
+            hass.bus.async_fire(EVENT_NEW_MESSAGE, {"message": message})
         for entry in hass.config_entries.async_entries(DOMAIN):
             if entry.state is ConfigEntryState.LOADED:
                 await entry.runtime_data.async_inject_test_messages(messages)

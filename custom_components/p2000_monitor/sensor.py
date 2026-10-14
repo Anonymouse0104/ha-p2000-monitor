@@ -18,10 +18,6 @@ from .const import (
     CONF_INCLUDE_TEXT,
     CONF_PRIORITIES,
     CONF_REGIONS,
-    EVENT_FILTER_MATCH,
-    EVENT_INCIDENT_UPDATE,
-    EVENT_NEW_INCIDENT,
-    EVENT_NEW_MESSAGE,
     MAX_FILTER_INCIDENT_HISTORY,
     MAX_HISTORY,
 )
@@ -257,30 +253,10 @@ class P2000FilterSensor(SensorEntity):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
+        self._processor.entity_id = self.entity_id
         self.async_on_remove(self._processor.async_add_listener(self._handle_processor_update))
 
     @callback
     def _handle_processor_update(self):
-        data = self._data()
-        for message in data.get("new_messages", []):
-            self.hass.bus.async_fire(
-                EVENT_NEW_MESSAGE,
-                {"message": message, "sensor": self.entity_id},
-            )
-            self.hass.bus.async_fire(
-                EVENT_FILTER_MATCH,
-                {"message": message, "filter": self._config, "sensor": self.entity_id},
-            )
-        for change in data.get("incident_changes", []):
-            incident = change.get("incident", {})
-            event = EVENT_NEW_INCIDENT if change.get("action") == "new" else EVENT_INCIDENT_UPDATE
-            self.hass.bus.async_fire(
-                event,
-                {
-                    "incident": incident,
-                    "message": change.get("message", {}),
-                    "sensor": self.entity_id,
-                },
-            )
         self.async_write_ha_state()
 

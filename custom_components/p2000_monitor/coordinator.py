@@ -21,6 +21,11 @@ from .const import (
     DEFAULT_INCIDENT_WINDOW,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    EVENT_FILTER_MATCH,
+    EVENT_INCIDENT_UPDATE,
+    EVENT_NEW_INCIDENT,
+    EVENT_NEW_MESSAGE,
+    MAX_EVENT_AGE,
     MAX_INCIDENT_HISTORY,
     MAX_SEEN_MESSAGES,
     STORAGE_KEY,
@@ -271,26 +276,38 @@ class P2000FeedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.exception("AlarmeringDroid API update mislukt")
             raise UpdateFailed(f"AlarmeringDroid API update mislukt: {err}") from err
         messages.sort(key=message_sort_key, reverse=True)
+        new_messages = self._detect_new(messages)
+        for message in reversed(new_messages):  # oldest first
+            self.hass.bus.async_fire(EVENT_NEW_MESSAGE, {"message": message})
+        return {"messages": messages, "new_messages": new_messages}
+
+    def _detect_new(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return messages whose id was never seen before, newest first.
+
+        Every id in the feed is remembered, whatever its age, so a message is
+        reported exactly once no matter how many arrive within one interval.
+        The first poll only primes the cache: the feed's backlog is not new.
+        """
         if not self._initialized:
             for message in messages:
-                self._remember_message_id(message.get("message_id", ""))
+                self._remember_message_id(message["message_id"])
             self._initialized = True
-            return {"messages": messages, "new_messages": []}
+            return []
         now = dt_util.utcnow()
-        live_horizon = 1800
-        live_new = []
+        new_messages = []
         for message in messages:
-            published = parse_published(message.get("published"))
-            age = (now - published).total_seconds() if published else 0
-            if published is not None and (age < -300 or age > live_horizon):
-                continue
-            message_id = message.get("message_id", "")
-            if not message_id or message_id in self._seen_ids:
+            message_id = message["message_id"]
+            if message_id in self._seen_ids:
                 continue
             self._remember_message_id(message_id)
-            live_new.append(message)
-            _LOGGER.info("P2000 new message: %s | %s | %s | regio %s/%s", message.get("published", ""), message.get("discipline", ""), message.get("message", ""), message.get("regio", ""), message.get("regio_name", ""))
-        return {"messages": messages, "new_messages": live_new}
+            published = parse_published(message.get("published"))
+            if published is not None and (now - published).total_seconds() > MAX_EVENT_AGE:
+                # Seen for the first time after a long outage: too stale to alarm on.
+                _LOGGER.debug("P2000 skipping stale message %s from %s", message_id, published)
+                continue
+            new_messages.append(message)
+            _LOGGER.debug("P2000 new message: %s | %s | %s | regio %s/%s", message.get("published", ""), message.get("discipline", ""), message.get("message", ""), message.get("regio", ""), message.get("regio_name", ""))
+        return new_messages
 
 
 class P2000FilterProcessor:
@@ -307,6 +324,9 @@ class P2000FilterProcessor:
     ) -> None:
         self.hass = hass
         self.feed = feed
+        self.entry_id = entry_id
+        # Set by the sensor once it is added, so events can name it.
+        self.entity_id: str | None = None
         self.exclude_capcodes = {str(x).strip() for x in (exclude_capcodes or []) if str(x).strip()}
         self.incident_window = incident_window
         self.api_filter = {k: v for k, v in (api_filter or {}).items() if v not in (None, "", [], {})}
@@ -315,10 +335,12 @@ class P2000FilterProcessor:
         self._store = Store(hass, STORAGE_VERSION, storage_key(entry_id))
         self._listeners: list[Callable[[], None]] = []
         self._unsub_feed: Callable[[], None] | None = None
+        self._last_feed_data: dict[str, Any] | None = None
 
     async def async_start(self) -> None:
         """Load stored incidents, build the initial view and follow the feed."""
         await self.async_load_incident_history()
+        self._last_feed_data = self.feed.data
         self._apply(self.feed.data or {}, process_new=False)
         self._unsub_feed = self.feed.async_add_listener(self._handle_feed_update)
 
@@ -345,7 +367,10 @@ class P2000FilterProcessor:
 
     @callback
     def _handle_feed_update(self) -> None:
-        if self.feed.data is not None:
+        # Listeners also run after a failed refresh, with the previous data still
+        # in place; only process each feed snapshot once so events never repeat.
+        if self.feed.data is not None and self.feed.data is not self._last_feed_data:
+            self._last_feed_data = self.feed.data
             self._apply(self.feed.data, process_new=True)
         self._notify()
 
@@ -367,6 +392,22 @@ class P2000FilterProcessor:
             "incident_changes": incident_changes,
             "incidents": self._current_incidents(),
         }
+        self._fire_events(new_messages, incident_changes)
+
+    @callback
+    def _fire_events(self, new_messages: list[dict[str, Any]], incident_changes: list[dict[str, Any]]) -> None:
+        """Fire one filter-match event per accepted new message, plus incident events."""
+        base = {"entry_id": self.entry_id, "sensor": self.entity_id}
+        for message in reversed(new_messages):  # oldest first
+            self.hass.bus.async_fire(
+                EVENT_FILTER_MATCH, {**base, "message": message, "filter": self.api_filter}
+            )
+        for change in incident_changes:
+            event = EVENT_NEW_INCIDENT if change.get("action") == "new" else EVENT_INCIDENT_UPDATE
+            self.hass.bus.async_fire(
+                event,
+                {**base, "incident": change.get("incident", {}), "message": change.get("message", {})},
+            )
 
     async def async_load_incident_history(self) -> None:
         try:
@@ -542,4 +583,5 @@ class P2000FilterProcessor:
             "incident_changes": changes,
             "incidents": self._current_incidents(),
         }
+        self._fire_events(accepted, changes)
         self._notify()
