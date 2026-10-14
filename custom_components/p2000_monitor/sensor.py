@@ -29,7 +29,16 @@ from .const import (
     MAX_HISTORY,
     SERVICE_INJECT_TEST_INCIDENT,
 )
-from .coordinator import P2000DataCoordinator, REGIONS, SERVICES, extract_priority, normalize_incident_text, text_similarity
+from .coordinator import (
+    P2000DataCoordinator,
+    REGIONS,
+    SERVICES,
+    extract_priority,
+    message_sort_key,
+    normalize_incident_text,
+    parse_published,
+    text_similarity,
+)
 
 DEFAULT_NAME = "P2000 Monitor"
 CONF_FILTERS = "filters"
@@ -109,18 +118,12 @@ def _filter_matches(message: dict[str, Any], config: dict[str, Any]) -> bool:
 
 
 def _published_timestamp(message: dict[str, Any]) -> float:
-    value = message.get("published")
-    if not value:
-        return 0.0
-    try:
-        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        return dt.timestamp()
-    except (TypeError, ValueError):
-        return 0.0
+    published = parse_published(message.get("published"))
+    return published.timestamp() if published else 0.0
 
 
 def _newest_first(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return sorted(messages, key=_published_timestamp, reverse=True)
+    return sorted(messages, key=message_sort_key, reverse=True)
 
 
 def _build_incident_history(messages: list[dict[str, Any]], incident_window: int) -> list[dict[str, Any]]:
