@@ -1,7 +1,9 @@
 """AlarmeringDroid API coordinator for P2000 Monitor."""
 from __future__ import annotations
 
+import asyncio
 from collections import deque
+from collections.abc import Callable
 from datetime import datetime, timedelta
 import hashlib
 import logging
@@ -9,7 +11,7 @@ import re
 from typing import Any
 
 import aiohttp
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -29,6 +31,11 @@ _LOGGER = logging.getLogger(__name__)
 API_URL = "https://beta.alarmeringdroid.nl/api2/find/"
 API_TIMEOUT = 15
 LOCAL_TZ = dt_util.get_time_zone("Europe/Amsterdam")
+
+
+def storage_key(entry_id: str) -> str:
+    """Per-entry storage key so entries never overwrite each other's history."""
+    return f"{STORAGE_KEY}.{entry_id}"
 REGIONS = {
     "1": "Amsterdam-Amstelland", "2": "Groningen", "3": "Noord- en Oost-Gelderland",
     "4": "Zaanstreek-Waterland", "5": "Hollands Midden", "6": "Brabant-Noord",
@@ -195,38 +202,173 @@ def normalize_api_message(item: dict[str, Any]) -> dict[str, Any] | None:
         "source": "alarmeringdroid",
         "city": _as_text(item.get("plaats") or item.get("city") or item.get("woonplaats")),
     }
-    result["message_id"] = P2000DataCoordinator._generate_message_id(result)
+    result["message_id"] = generate_message_id(result)
     return result
 
 
-class P2000DataCoordinator(DataUpdateCoordinator):
-    """Fetch the complete AlarmeringDroid feed and filter it locally."""
+def generate_message_id(data: dict[str, Any]) -> str:
+    """Return a stable id for a normalized message."""
+    # The API id is stable across polls; only fall back to a content hash without it.
+    if data.get("api_id"):
+        return f"ad-{data['api_id']}"
+    raw = "|".join(str(data.get(k, "")) for k in ("published", "message", "regio", "discipline"))
+    raw += "|" + ",".join(data.get("capcodes") or [str(data.get("capcode", ""))])
+    return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
-    def __init__(self, hass: HomeAssistant, exclude_capcodes=None, incident_window=DEFAULT_INCIDENT_WINDOW, api_filter=None):
+
+class P2000FeedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Poll the complete AlarmeringDroid feed once for all config entries.
+
+    Filtering and incident tracking happen per entry in P2000FilterProcessor,
+    so adding sensors never adds API requests.
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._seen_ids: set[str] = set()
+        self._seen_order: deque[str] = deque()
+        self._initialized = False
+        self.setup_lock = asyncio.Lock()
+        super().__init__(
+            hass,
+            _LOGGER,
+            config_entry=None,
+            name=DOMAIN,
+            update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
+        )
+
+    def _remember_message_id(self, message_id: str) -> None:
+        if not message_id or message_id in self._seen_ids:
+            return
+        if len(self._seen_order) >= MAX_SEEN_MESSAGES:
+            self._seen_ids.discard(self._seen_order.popleft())
+        self._seen_order.append(message_id)
+        self._seen_ids.add(message_id)
+
+    async def _fetch_api(self) -> list[dict[str, Any]]:
+        _LOGGER.info("P2000 API: fetching complete unfiltered feed")
+        headers = {"User-Agent": "P2000-Monitor/0.5.7 Home Assistant", "Accept": "application/json, text/plain, */*"}
+        session = async_get_clientsession(self.hass)
+        async with session.get(API_URL, headers=headers, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)) as response:
+            response.raise_for_status()
+            raw = await response.json(content_type=None)
+        items = raw.get("meldingen") if isinstance(raw, dict) else None
+        if items is None and isinstance(raw, dict):
+            items = raw.get("items")
+        if not isinstance(items, list):
+            raise ValueError("AlarmeringDroid API returned no 'meldingen'/'items' list")
+        messages = []
+        for item in _flatten_items(items):
+            message = normalize_api_message(item)
+            if message:
+                messages.append(message)
+        _LOGGER.info("P2000 API returned %s messages; normalized %s", len(items), len(messages))
+        return messages
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        try:
+            messages = await self._fetch_api()
+        except Exception as err:
+            _LOGGER.exception("AlarmeringDroid API update mislukt")
+            raise UpdateFailed(f"AlarmeringDroid API update mislukt: {err}") from err
+        messages.sort(key=message_sort_key, reverse=True)
+        if not self._initialized:
+            for message in messages:
+                self._remember_message_id(message.get("message_id", ""))
+            self._initialized = True
+            return {"messages": messages, "new_messages": []}
+        now = dt_util.utcnow()
+        live_horizon = 1800
+        live_new = []
+        for message in messages:
+            published = parse_published(message.get("published"))
+            age = (now - published).total_seconds() if published else 0
+            if published is not None and (age < -300 or age > live_horizon):
+                continue
+            message_id = message.get("message_id", "")
+            if not message_id or message_id in self._seen_ids:
+                continue
+            self._remember_message_id(message_id)
+            live_new.append(message)
+            _LOGGER.info("P2000 new message: %s | %s | %s | regio %s/%s", message.get("published", ""), message.get("discipline", ""), message.get("message", ""), message.get("regio", ""), message.get("regio_name", ""))
+        return {"messages": messages, "new_messages": live_new}
+
+
+class P2000FilterProcessor:
+    """Apply one config entry's filters to the shared feed and track its incidents."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        feed: P2000FeedCoordinator,
+        entry_id: str,
+        exclude_capcodes=None,
+        incident_window=DEFAULT_INCIDENT_WINDOW,
+        api_filter=None,
+    ) -> None:
+        self.hass = hass
+        self.feed = feed
         self.exclude_capcodes = {str(x).strip() for x in (exclude_capcodes or []) if str(x).strip()}
         self.incident_window = incident_window
         self.api_filter = {k: v for k, v in (api_filter or {}).items() if v not in (None, "", [], {})}
-        self._seen_ids = set()
-        self._seen_order = deque(maxlen=MAX_SEEN_MESSAGES)
-        self._initialized = False
-        self._incidents = deque(maxlen=MAX_INCIDENT_HISTORY)
-        self._storage_loaded = False
-        self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL))
+        self.data: dict[str, Any] = {}
+        self._incidents: deque[dict[str, Any]] = deque(maxlen=MAX_INCIDENT_HISTORY)
+        self._store = Store(hass, STORAGE_VERSION, storage_key(entry_id))
+        self._listeners: list[Callable[[], None]] = []
+        self._unsub_feed: Callable[[], None] | None = None
 
-    @staticmethod
-    def _generate_message_id(data):
-        # The API id is stable across polls; only fall back to a content hash without it.
-        if data.get("api_id"):
-            return f"ad-{data['api_id']}"
-        raw = "|".join(str(data.get(k, "")) for k in ("published", "message", "regio", "discipline"))
-        raw += "|" + ",".join(data.get("capcodes") or [str(data.get("capcode", ""))])
-        return hashlib.sha256(raw.encode()).hexdigest()[:24]
+    async def async_start(self) -> None:
+        """Load stored incidents, build the initial view and follow the feed."""
+        await self.async_load_incident_history()
+        self._apply(self.feed.data or {}, process_new=False)
+        self._unsub_feed = self.feed.async_add_listener(self._handle_feed_update)
 
-    async def async_load_incident_history(self):
-        if self._storage_loaded:
-            return
-        self._storage_loaded = True
+    @callback
+    def async_stop(self) -> None:
+        if self._unsub_feed:
+            self._unsub_feed()
+            self._unsub_feed = None
+
+    @callback
+    def async_add_listener(self, update_callback: Callable[[], None]) -> Callable[[], None]:
+        self._listeners.append(update_callback)
+
+        @callback
+        def remove_listener() -> None:
+            self._listeners.remove(update_callback)
+
+        return remove_listener
+
+    @callback
+    def _notify(self) -> None:
+        for update_callback in list(self._listeners):
+            update_callback()
+
+    @callback
+    def _handle_feed_update(self) -> None:
+        if self.feed.data is not None:
+            self._apply(self.feed.data, process_new=True)
+        self._notify()
+
+    def _accepts(self, message: dict[str, Any]) -> bool:
+        return not self._is_excluded(message) and self._passes_filters(message)
+
+    @callback
+    def _apply(self, feed_data: dict[str, Any], process_new: bool) -> None:
+        messages = [m for m in feed_data.get("messages") or [] if self._accepts(m)]
+        new_messages = [m for m in feed_data.get("new_messages") or [] if self._accepts(m)] if process_new else []
+        _LOGGER.info("P2000 after local filters: %s messages (from %s)", len(messages), len(feed_data.get("messages") or []))
+        incident_changes = self._process_live_batch(new_messages)
+        if incident_changes:
+            self._store.async_delay_save(self._data_to_save, 10)
+        self.data = {
+            "latest": messages[0] if messages else None,
+            "messages": messages,
+            "new_messages": new_messages,
+            "incident_changes": incident_changes,
+            "incidents": self._current_incidents(),
+        }
+
+    async def async_load_incident_history(self) -> None:
         try:
             stored = await self._store.async_load()
         except Exception as err:
@@ -243,19 +385,9 @@ class P2000DataCoordinator(DataUpdateCoordinator):
             incident.setdefault("alarm_count", len(incident["capcodes"]))
             self._incidents.append(incident)
 
-    async def async_save_incident_history(self):
-        try:
-            await self._store.async_save({"incidents": [self._public_incident(x) for x in self._incidents if not x.get("test")][:MAX_INCIDENT_HISTORY]})
-        except Exception as err:
-            _LOGGER.warning("Kon P2000-incidenthistorie niet opslaan: %s", err)
-
-    def _remember_message_id(self, message_id):
-        if not message_id:
-            return
-        if len(self._seen_order) >= MAX_SEEN_MESSAGES:
-            self._seen_ids.discard(self._seen_order[0])
-        self._seen_order.append(message_id)
-        self._seen_ids.add(message_id)
+    @callback
+    def _data_to_save(self) -> dict[str, Any]:
+        return {"incidents": [self._public_incident(x) for x in self._incidents if not x.get("test")][:MAX_INCIDENT_HISTORY]}
 
     def _is_excluded(self, message):
         return bool(set(message.get("capcodes", [])) & self.exclude_capcodes)
@@ -395,70 +527,19 @@ class P2000DataCoordinator(DataUpdateCoordinator):
             message["published"] = f"TEST-{batch_id}-{index}"
             message["test"] = True
             message.setdefault("capcodes", [str(message.get("capcode"))] if message.get("capcode") else [])
-            message["message_id"] = self._generate_message_id(message)
-            if not self._is_excluded(message) and self._passes_filters(message):
+            message["message_id"] = generate_message_id(message)
+            if self._accepts(message):
                 accepted.append(message)
         changes = self._process_live_batch(accepted)
-        current = list((self.data or {}).get("messages") or [])
+        current = list(self.data.get("messages") or [])
         ids = {x.get("message_id") for x in accepted}
         combined = accepted + [m for m in current if m.get("message_id") not in ids]
-        data = dict(self.data or {})
-        data.update({"latest": combined[0] if combined else data.get("latest"), "messages": combined, "new_messages": accepted, "incident_changes": changes, "incidents": self._current_incidents()})
-        self.async_set_updated_data(data)
-
-    async def _fetch_api(self):
-        _LOGGER.info("P2000 API: fetching complete unfiltered feed; local filters=%s", self.api_filter)
-        headers = {"User-Agent": "P2000-Monitor/0.5.7 Home Assistant", "Accept": "application/json, text/plain, */*"}
-        session = async_get_clientsession(self.hass)
-        async with session.get(API_URL, headers=headers, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)) as response:
-            response.raise_for_status()
-            raw = await response.json(content_type=None)
-        items = raw.get("meldingen") if isinstance(raw, dict) else None
-        if items is None and isinstance(raw, dict):
-            items = raw.get("items")
-        if not isinstance(items, list):
-            raise ValueError("AlarmeringDroid API returned no 'meldingen'/'items' list")
-        messages = []
-        for item in _flatten_items(items):
-            message = normalize_api_message(item)
-            if message:
-                messages.append(message)
-        _LOGGER.info("P2000 API returned %s messages; normalized %s", len(items), len(messages))
-        return messages
-
-    async def _async_update_data(self):
-        await self.async_load_incident_history()
-        try:
-            messages = await self._fetch_api()
-        except Exception as err:
-            _LOGGER.exception("AlarmeringDroid API update mislukt")
-            raise UpdateFailed(f"AlarmeringDroid API update mislukt: {err}") from err
-        original_count = len(messages)
-        messages = [m for m in messages if not self._is_excluded(m)]
-        messages = [m for m in messages if self._passes_filters(m)]
-        messages.sort(key=message_sort_key, reverse=True)
-        latest = messages[0] if messages else None
-        _LOGGER.info("P2000 after local filters: %s messages (from %s)", len(messages), original_count)
-        if not self._initialized:
-            for message in messages:
-                self._remember_message_id(message.get("message_id", ""))
-            self._initialized = True
-            return {"latest": latest, "messages": messages, "new_messages": [], "incident_changes": [], "incidents": self._current_incidents()}
-        now = dt_util.utcnow()
-        live_horizon = max(self.incident_window, 900)
-        live_new = []
-        for message in messages:
-            published = parse_published(message.get("published"))
-            age = (now - published).total_seconds() if published else 0
-            if published is not None and (age < -300 or age > live_horizon):
-                continue
-            message_id = message.get("message_id", "")
-            if not message_id or message_id in self._seen_ids:
-                continue
-            self._remember_message_id(message_id)
-            live_new.append(message)
-            _LOGGER.info("P2000 new message: %s | %s | %s | regio %s/%s", message.get("published", ""), message.get("discipline", ""), message.get("message", ""), message.get("regio", ""), message.get("regio_name", ""))
-        incident_changes = self._process_live_batch(live_new)
-        if incident_changes:
-            await self.async_save_incident_history()
-        return {"latest": latest, "messages": messages, "new_messages": live_new, "incident_changes": incident_changes, "incidents": self._current_incidents()}
+        self.data = {
+            **self.data,
+            "latest": combined[0] if combined else self.data.get("latest"),
+            "messages": combined,
+            "new_messages": accepted,
+            "incident_changes": changes,
+            "incidents": self._current_incidents(),
+        }
+        self._notify()
