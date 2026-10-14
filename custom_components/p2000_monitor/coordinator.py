@@ -79,18 +79,35 @@ def _as_text(value: Any) -> str:
     return str(value).strip() if value is not None else ""
 
 
+def normalize_capcode(value: Any) -> str:
+    """Normalize a capcode so '001005258', ' 1005258' and 1005258 compare equal."""
+    text = str(value if value is not None else "").strip()
+    return text.lstrip("0") or ("0" if text else "")
+
+
 def _capcodes(item: dict[str, Any]) -> list[str]:
     value = item.get("capcodes", item.get("codes", item.get("capcode", item.get("code", []))))
-    if not isinstance(value, list):
+    if isinstance(value, str):
+        value = re.split(r"[,;\s]+", value)
+    elif not isinstance(value, list):
         value = [value] if value else []
     result = []
     for entry in value:
         if isinstance(entry, dict):
             entry = entry.get("capcode") or entry.get("code") or entry.get("id")
-        text = _as_text(entry)
+        text = normalize_capcode(_as_text(entry))
         if text and text not in result:
             result.append(text)
     return result
+
+
+def _message_capcodes(message: dict[str, Any]) -> set[str]:
+    """All capcodes of a normalized message, including a lone 'capcode' value."""
+    codes = {normalize_capcode(x) for x in message.get("capcodes") or []}
+    if message.get("capcode"):
+        codes.add(normalize_capcode(message["capcode"]))
+    codes.discard("")
+    return codes
 
 
 def _region_id(item: dict[str, Any]) -> str:
@@ -327,9 +344,18 @@ class P2000FilterProcessor:
         self.entry_id = entry_id
         # Set by the sensor once it is added, so events can name it.
         self.entity_id: str | None = None
-        self.exclude_capcodes = {str(x).strip() for x in (exclude_capcodes or []) if str(x).strip()}
+        self.exclude_capcodes = {normalize_capcode(x) for x in (exclude_capcodes or []) if normalize_capcode(x)}
         self.incident_window = incident_window
         self.api_filter = {k: v for k, v in (api_filter or {}).items() if v not in (None, "", [], {})}
+        # Pre-normalized once instead of on every message.
+        self._filters = {
+            "regions": {str(x) for x in self.api_filter.get("regios", [])},
+            "services": {str(x) for x in self.api_filter.get("diensten", [])},
+            "capcodes": {normalize_capcode(x) for x in self.api_filter.get("capcodes", []) if normalize_capcode(x)},
+            "priorities": {str(x).upper().replace(" ", "") for x in self.api_filter.get("priorities", [])},
+            "include": [str(x).strip().lower() for x in self.api_filter.get("include_text", []) if str(x).strip()],
+            "exclude": [str(x).strip().lower() for x in self.api_filter.get("exclude_text", []) if str(x).strip()],
+        }
         self.data: dict[str, Any] = {}
         self._incidents: deque[dict[str, Any]] = deque(maxlen=MAX_INCIDENT_HISTORY)
         self._store = Store(hass, STORAGE_VERSION, storage_key(entry_id))
@@ -431,30 +457,27 @@ class P2000FilterProcessor:
         return {"incidents": [self._public_incident(x) for x in self._incidents if not x.get("test")][:MAX_INCIDENT_HISTORY]}
 
     def _is_excluded(self, message):
-        return bool(set(message.get("capcodes", [])) & self.exclude_capcodes)
+        return bool(_message_capcodes(message) & self.exclude_capcodes)
 
     def _passes_filters(self, message):
-        regions = {str(x) for x in self.api_filter.get("regios", [])}
-        services = {str(x) for x in self.api_filter.get("diensten", [])}
-        capcodes = {str(x) for x in self.api_filter.get("capcodes", [])}
-        priorities = {str(x).upper().replace(" ", "") for x in self.api_filter.get("priorities", [])}
-        includes = [str(x).lower() for x in self.api_filter.get("include_text", []) if str(x).strip()]
-        excludes = [str(x).lower() for x in self.api_filter.get("exclude_text", []) if str(x).strip()]
-        if regions and str(message.get("regio", "")) not in regions:
+        """OR between the values of one filter, AND between filters."""
+        f = self._filters
+        if f["regions"] and str(message.get("regio", "")) not in f["regions"]:
             return False
-        if services and str(message.get("dienstid", "")) not in services:
+        if f["services"] and str(message.get("dienstid", "")) not in f["services"]:
             return False
-        if capcodes and not (set(message.get("capcodes", [])) & capcodes):
+        if f["capcodes"] and not (_message_capcodes(message) & f["capcodes"]):
             return False
-        if priorities:
+        if f["priorities"]:
             priority = extract_priority(message.get("message", ""))
-            if not priority or priority.upper() not in priorities:
+            if not priority or priority not in f["priorities"]:
                 return False
-        lower = str(message.get("message", "")).lower()
-        if includes and not all(x in lower for x in includes):
-            return False
-        if excludes and any(x in lower for x in excludes):
-            return False
+        if f["include"] or f["exclude"]:
+            lower = str(message.get("message", "")).lower()
+            if f["include"] and not any(x in lower for x in f["include"]):
+                return False
+            if any(x in lower for x in f["exclude"]):
+                return False
         return True
 
     @staticmethod

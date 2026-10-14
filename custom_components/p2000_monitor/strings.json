@@ -16,9 +16,9 @@
           "incident_window": "Incident-koppeltijd (seconden)"
         },
         "data_description": {
-          "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters.",
+          "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters. De tekstfilters blijven gelden.",
           "capcodes": "Meerdere capcodes scheiden met komma of puntkomma. Een melding wordt geaccepteerd als één van de capcodes overeenkomt.",
-          "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; alle opgegeven woorden moeten voorkomen.",
+          "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; de melding wordt geaccepteerd als één van de woorden voorkomt.",
           "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
           "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden."
         }
@@ -42,9 +42,9 @@
           "incident_window": "Incident-koppeltijd (seconden)"
         },
         "data_description": {
-          "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters.",
+          "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters. De tekstfilters blijven gelden.",
           "capcodes": "Meerdere capcodes scheiden met komma of puntkomma. Een melding wordt geaccepteerd als één van de capcodes overeenkomt.",
-          "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; alle opgegeven woorden moeten voorkomen.",
+          "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; de melding wordt geaccepteerd als één van de woorden voorkomt.",
           "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
           "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden."
         }
