@@ -12,6 +12,9 @@ from homeassistant.util import dt as dt_util
 
 from . import entry_settings
 from .const import AVAILABILITY_GRACE, MAX_FILTER_INCIDENT_HISTORY, MAX_HISTORY
+
+# Home Assistant rejects states longer than 255 characters.
+MAX_STATE_LENGTH = 255
 from .coordinator import (
     P2000FilterProcessor,
     extract_priority,
@@ -116,6 +119,12 @@ async def async_setup_entry(
 
 class P2000FilterSensor(SensorEntity):
     _attr_should_poll = False
+    # These lists easily exceed the recorder's 16 KB attribute limit (which
+    # drops all attributes with a warning on every state change). They stay
+    # available live in the state machine for dashboards and templates.
+    _unrecorded_attributes = frozenset(
+        {"capcodes", "incident", "incidenten", "incident_history", "meldingen"}
+    )
 
     def __init__(self, processor: P2000FilterProcessor, config: dict[str, Any], entity_key: str) -> None:
         self._processor = processor
@@ -146,11 +155,7 @@ class P2000FilterSensor(SensorEntity):
             "Lifeliner": "mdi:helicopter",
         }.get(message.get("discipline"), "mdi:radio-tower")
 
-    def _matching_messages(self):
-        return _newest_first(list(self._data().get("messages") or []))
-
-    def _matching_incidents(self):
-        messages = self._matching_messages()
+    def _matching_incidents(self, messages):
         visible_history = _build_incident_history(
             messages,
             int(self._processor.incident_window),
@@ -165,23 +170,21 @@ class P2000FilterSensor(SensorEntity):
             reverse=True,
         )[:MAX_FILTER_INCIDENT_HISTORY]
 
-    @property
-    def native_value(self):
-        messages = self._matching_messages()
-        return messages[0].get("message", "Geen meldingen") if messages else "Geen meldingen"
+    @callback
+    def _update_from_processor(self) -> None:
+        """Compute state, icon and attributes once per update.
 
-    @property
-    def icon(self):
-        messages = self._matching_messages()
-        return self._icon_for(messages[0] if messages else {})
-
-    @property
-    def extra_state_attributes(self):
-        messages = self._matching_messages()
-        latest = messages[0] if messages else {}
+        Messages arrive newest first from the processor (injected test messages
+        on top), so they are not sorted again here.
+        """
         data = self._data()
-        incidents = self._matching_incidents()
-        return {
+        messages = list(data.get("messages") or [])
+        latest = messages[0] if messages else {}
+        incidents = self._matching_incidents(messages)
+        state = latest.get("message") or "Geen meldingen"
+        self._attr_native_value = state if len(state) <= MAX_STATE_LENGTH else state[: MAX_STATE_LENGTH - 1] + "…"
+        self._attr_icon = self._icon_for(latest)
+        self._attr_extra_state_attributes = {
             "source": latest.get("source", "alarmeringdroid"),
             "message": latest.get("message", ""),
             "melding": latest.get("melding", ""),
@@ -209,9 +212,11 @@ class P2000FilterSensor(SensorEntity):
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         self._processor.entity_id = self.entity_id
+        self._update_from_processor()
         self.async_on_remove(self._processor.async_add_listener(self._handle_processor_update))
 
     @callback
     def _handle_processor_update(self):
+        self._update_from_processor()
         self.async_write_ha_state()
 
