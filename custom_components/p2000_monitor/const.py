@@ -14,7 +14,14 @@ CONF_INCLUDE_TEXT = "include_text"
 CONF_EXCLUDE_TEXT = "exclude_text"
 CONF_INCIDENT_WINDOW = "incident_window"
 
+from datetime import timedelta
+
 DEFAULT_SCAN_INTERVAL = 10
+# Poll interval doubles per failed update up to this while the API is down.
+MAX_BACKOFF = timedelta(minutes=5)
+# Sensors stay available with their last data for this long after the last
+# successful update, so one failed poll does not flap them to unavailable.
+AVAILABILITY_GRACE = timedelta(minutes=5)
 
 EVENT_NEW_MESSAGE = "p2000_monitor_new_message"
 EVENT_FILTER_MATCH = "p2000_monitor_filter_match"

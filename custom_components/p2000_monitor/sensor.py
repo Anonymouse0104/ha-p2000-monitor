@@ -8,9 +8,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import entry_settings
-from .const import MAX_FILTER_INCIDENT_HISTORY, MAX_HISTORY
+from .const import AVAILABILITY_GRACE, MAX_FILTER_INCIDENT_HISTORY, MAX_HISTORY
 from .coordinator import (
     P2000FilterProcessor,
     extract_priority,
@@ -125,7 +126,13 @@ class P2000FilterSensor(SensorEntity):
 
     @property
     def available(self) -> bool:
-        return self._processor.feed.last_update_success
+        feed = self._processor.feed
+        if feed.last_update_success:
+            return True
+        return (
+            feed.last_success_time is not None
+            and dt_util.utcnow() - feed.last_success_time < AVAILABILITY_GRACE
+        )
 
     def _data(self):
         return self._processor.data or {}
