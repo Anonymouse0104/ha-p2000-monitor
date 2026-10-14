@@ -125,14 +125,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up P2000 Monitor from a UI config entry."""
     feed = await _async_get_feed(hass)
     settings = entry_settings(entry)
-    api_filter = {} if settings[CONF_ALL_SERVICES] else {
-        "regios": settings[CONF_REGIONS],
-        "diensten": settings[CONF_DISCIPLINES],
-        "capcodes": settings[CONF_CAPCODES],
-        "priorities": settings[CONF_PRIORITIES],
+    # 'Toon alle meldingen' ignores region/service/priority/capcode filters, as
+    # the UI describes; the text filters keep applying.
+    api_filter = {
         "include_text": settings[CONF_INCLUDE_TEXT],
         "exclude_text": settings[CONF_EXCLUDE_TEXT],
     }
+    if not settings[CONF_ALL_SERVICES]:
+        api_filter |= {
+            "regios": settings[CONF_REGIONS],
+            "diensten": settings[CONF_DISCIPLINES],
+            "capcodes": settings[CONF_CAPCODES],
+            "priorities": settings[CONF_PRIORITIES],
+        }
     processor = P2000FilterProcessor(
         hass,
         feed,

@@ -10,19 +10,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import entry_settings
-from .const import (
-    CONF_ALL_SERVICES,
-    CONF_CAPCODES,
-    CONF_DISCIPLINES,
-    CONF_EXCLUDE_TEXT,
-    CONF_INCLUDE_TEXT,
-    CONF_PRIORITIES,
-    CONF_REGIONS,
-    MAX_FILTER_INCIDENT_HISTORY,
-    MAX_HISTORY,
-)
+from .const import MAX_FILTER_INCIDENT_HISTORY, MAX_HISTORY
 from .coordinator import (
-    SERVICES,
     P2000FilterProcessor,
     extract_priority,
     message_sort_key,
@@ -30,47 +19,6 @@ from .coordinator import (
     parse_published,
     text_similarity,
 )
-
-
-def _filter_matches(message: dict[str, Any], config: dict[str, Any]) -> bool:
-    """Return whether a message matches a sensor's configured filters."""
-    if config.get(CONF_ALL_SERVICES):
-        return True
-
-    regions = {str(x) for x in config.get(CONF_REGIONS, [])}
-    disciplines = {str(x) for x in config.get(CONF_DISCIPLINES, [])}
-    priorities = {str(x).upper().replace(" ", "") for x in config.get(CONF_PRIORITIES, [])}
-    capcodes = {str(x) for x in config.get(CONF_CAPCODES, [])}
-    include = [str(x).lower() for x in config.get(CONF_INCLUDE_TEXT, []) if str(x).strip()]
-    exclude = [str(x).lower() for x in config.get(CONF_EXCLUDE_TEXT, []) if str(x).strip()]
-
-    if regions and str(message.get("regio", "")) not in regions:
-        return False
-    if disciplines:
-        wanted = {SERVICES.get(x, x).lower() for x in disciplines}
-        if str(message.get("discipline", "")).lower() not in wanted:
-            return False
-    if priorities:
-        priority = extract_priority(message.get("message", ""))
-        if not priority or priority.upper() not in priorities:
-            return False
-
-    message_capcodes = {
-        str(code).strip()
-        for code in (message.get("capcodes") or [])
-        if str(code).strip()
-    }
-    if not message_capcodes and message.get("capcode"):
-        message_capcodes.add(str(message.get("capcode")).strip())
-    if capcodes and not message_capcodes.intersection(capcodes):
-        return False
-
-    lower = str(message.get("message", "")).lower()
-    if include and not all(x in lower for x in include):
-        return False
-    if exclude and any(x in lower for x in exclude):
-        return False
-    return True
 
 
 def _published_timestamp(message: dict[str, Any]) -> float:
