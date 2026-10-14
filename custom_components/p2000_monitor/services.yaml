@@ -9,7 +9,7 @@ inject_test_incident:
       name: Regio
       description: P2000-regionummer.
       required: true
-      default: "24"
+      default: "21"
       selector:
         text:
 
@@ -17,7 +17,7 @@ inject_test_incident:
       name: Regionaam
       description: Naam van de veiligheidsregio.
       required: true
-      default: "Limburg Zuid"
+      default: "Zuid-Limburg"
       selector:
         text:
 
