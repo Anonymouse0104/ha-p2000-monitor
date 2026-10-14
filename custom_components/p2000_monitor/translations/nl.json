@@ -1,0 +1,88 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "P2000 Monitor toevoegen",
+        "description": "Stel de eerste sensor in. Daarna voeg je via 'Sensor toevoegen' zoveel sensoren toe als je wilt, elk met eigen regio's, diensten en filters.",
+        "data": {
+          "name": "Sensornaam",
+          "all_services": "Toon alle meldingen",
+          "regions": "Veiligheidsregio's",
+          "disciplines": "Diensten",
+          "priorities": "Prioriteiten",
+          "capcodes": "Capcodes",
+          "include_text": "Tekst moet bevatten",
+          "exclude_text": "Tekst mag niet bevatten",
+          "incident_window": "Incident-koppeltijd (seconden)"
+        },
+        "data_description": {
+          "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters. De tekstfilters blijven gelden.",
+          "capcodes": "Meerdere capcodes scheiden met komma of puntkomma. Een melding wordt geaccepteerd als één van de capcodes overeenkomt.",
+          "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; de melding wordt geaccepteerd als één van de woorden voorkomt.",
+          "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
+          "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "P2000 Monitor is al toegevoegd. Gebruik 'Sensor toevoegen' voor een extra sensor."
+    }
+  },
+  "config_subentries": {
+    "sensor": {
+      "entry_type": "Sensor",
+      "initiate_flow": {
+        "user": "Sensor toevoegen"
+      },
+      "step": {
+        "user": {
+          "title": "P2000-sensor toevoegen",
+          "description": "Kies welke meldingen deze sensor volgt. Binnen een filter geldt OF, tussen filters EN. Laat een filter leeg om er niet op te filteren.",
+          "data": {
+            "name": "Sensornaam",
+            "all_services": "Toon alle meldingen",
+            "regions": "Veiligheidsregio's",
+            "disciplines": "Diensten",
+            "priorities": "Prioriteiten",
+            "capcodes": "Capcodes",
+            "include_text": "Tekst moet bevatten",
+            "exclude_text": "Tekst mag niet bevatten",
+            "incident_window": "Incident-koppeltijd (seconden)"
+          },
+          "data_description": {
+            "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters. De tekstfilters blijven gelden.",
+            "capcodes": "Meerdere capcodes scheiden met komma of puntkomma. Een melding wordt geaccepteerd als één van de capcodes overeenkomt.",
+            "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; de melding wordt geaccepteerd als één van de woorden voorkomt.",
+            "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
+            "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden."
+          }
+        },
+        "reconfigure": {
+          "title": "P2000-sensor wijzigen",
+          "description": "Pas de filters van deze sensor aan. Binnen een filter geldt OF, tussen filters EN.",
+          "data": {
+            "name": "Sensornaam",
+            "all_services": "Toon alle meldingen",
+            "regions": "Veiligheidsregio's",
+            "disciplines": "Diensten",
+            "priorities": "Prioriteiten",
+            "capcodes": "Capcodes",
+            "include_text": "Tekst moet bevatten",
+            "exclude_text": "Tekst mag niet bevatten",
+            "incident_window": "Incident-koppeltijd (seconden)"
+          },
+          "data_description": {
+            "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters. De tekstfilters blijven gelden.",
+            "capcodes": "Meerdere capcodes scheiden met komma of puntkomma. Een melding wordt geaccepteerd als één van de capcodes overeenkomt.",
+            "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; de melding wordt geaccepteerd als één van de woorden voorkomt.",
+            "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
+            "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden."
+          }
+        }
+      },
+      "error": {
+        "name_exists": "Er bestaat al een sensor met deze naam."
+      }
+    }
+  }
+}

@@ -2,52 +2,86 @@
   "config": {
     "step": {
       "user": {
-        "title": "P2000 Monitor configureren",
-        "description": "Kies zelf welke P2000-meldingen deze sensor moet volgen. Alle filters zijn optioneel. Aanbevolen: P2000 Monitor zonder filters; P2000 Test op Limburg-Noord + Zuid-Limburg en Brandweer.",
+        "title": "Add P2000 Monitor",
+        "description": "Set up the first sensor. Afterwards use 'Add sensor' to add as many sensors as you like, each with its own regions, services and filters.",
         "data": {
-          "name": "Sensornaam",
-          "all_services": "Toon alle meldingen",
-          "regions": "Veiligheidsregio's",
-          "disciplines": "Diensten",
-          "priorities": "Prioriteiten",
+          "name": "Sensor name",
+          "all_services": "Show all alerts",
+          "regions": "Safety regions",
+          "disciplines": "Services",
+          "priorities": "Priorities",
           "capcodes": "Capcodes",
-          "include_text": "Tekst moet bevatten",
-          "exclude_text": "Tekst mag niet bevatten",
-          "incident_window": "Incident-koppeltijd (seconden)"
+          "include_text": "Text must contain",
+          "exclude_text": "Text must not contain",
+          "incident_window": "Incident grouping window (seconds)"
         },
         "data_description": {
-          "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters. De tekstfilters blijven gelden.",
-          "capcodes": "Meerdere capcodes scheiden met komma of puntkomma. Een melding wordt geaccepteerd als één van de capcodes overeenkomt.",
-          "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; de melding wordt geaccepteerd als één van de woorden voorkomt.",
-          "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
-          "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden."
+          "all_services": "Shows every P2000 alert in the Netherlands and ignores the region, service, priority and capcode filters. Text filters still apply.",
+          "capcodes": "Separate multiple capcodes with a comma or semicolon. An alert matches if any of its capcodes matches.",
+          "include_text": "Separate multiple terms with a comma or semicolon; an alert matches if it contains any of them.",
+          "exclude_text": "Separate multiple terms with a comma or semicolon; an alert must contain none of them.",
+          "incident_window": "How long follow-up alerts are grouped into the same incident."
         }
       }
+    },
+    "abort": {
+      "already_configured": "P2000 Monitor is already added. Use 'Add sensor' for another sensor."
     }
   },
-  "options": {
-    "step": {
-      "init": {
-        "title": "P2000 Monitor filters wijzigen",
-        "description": "Pas de filters van deze P2000-sensor aan. Zet 'Toon alle meldingen' aan voor een volledig landelijke monitor.",
-        "data": {
-          "name": "Sensornaam",
-          "all_services": "Toon alle meldingen",
-          "regions": "Veiligheidsregio's",
-          "disciplines": "Diensten",
-          "priorities": "Prioriteiten",
-          "capcodes": "Capcodes",
-          "include_text": "Tekst moet bevatten",
-          "exclude_text": "Tekst mag niet bevatten",
-          "incident_window": "Incident-koppeltijd (seconden)"
+  "config_subentries": {
+    "sensor": {
+      "entry_type": "Sensor",
+      "initiate_flow": {
+        "user": "Add sensor"
+      },
+      "step": {
+        "user": {
+          "title": "Add P2000 sensor",
+          "description": "Choose which alerts this sensor follows. Values within one filter are OR, different filters are AND. Leave a filter empty to not filter on it.",
+          "data": {
+            "name": "Sensor name",
+            "all_services": "Show all alerts",
+            "regions": "Safety regions",
+            "disciplines": "Services",
+            "priorities": "Priorities",
+            "capcodes": "Capcodes",
+            "include_text": "Text must contain",
+            "exclude_text": "Text must not contain",
+            "incident_window": "Incident grouping window (seconds)"
+          },
+          "data_description": {
+            "all_services": "Shows every P2000 alert in the Netherlands and ignores the region, service, priority and capcode filters. Text filters still apply.",
+            "capcodes": "Separate multiple capcodes with a comma or semicolon. An alert matches if any of its capcodes matches.",
+            "include_text": "Separate multiple terms with a comma or semicolon; an alert matches if it contains any of them.",
+            "exclude_text": "Separate multiple terms with a comma or semicolon; an alert must contain none of them.",
+            "incident_window": "How long follow-up alerts are grouped into the same incident."
+          }
         },
-        "data_description": {
-          "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters. De tekstfilters blijven gelden.",
-          "capcodes": "Meerdere capcodes scheiden met komma of puntkomma. Een melding wordt geaccepteerd als één van de capcodes overeenkomt.",
-          "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; de melding wordt geaccepteerd als één van de woorden voorkomt.",
-          "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
-          "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden."
+        "reconfigure": {
+          "title": "Change P2000 sensor",
+          "description": "Change this sensor's filters. Values within one filter are OR, different filters are AND.",
+          "data": {
+            "name": "Sensor name",
+            "all_services": "Show all alerts",
+            "regions": "Safety regions",
+            "disciplines": "Services",
+            "priorities": "Priorities",
+            "capcodes": "Capcodes",
+            "include_text": "Text must contain",
+            "exclude_text": "Text must not contain",
+            "incident_window": "Incident grouping window (seconds)"
+          },
+          "data_description": {
+            "all_services": "Shows every P2000 alert in the Netherlands and ignores the region, service, priority and capcode filters. Text filters still apply.",
+            "capcodes": "Separate multiple capcodes with a comma or semicolon. An alert matches if any of its capcodes matches.",
+            "include_text": "Separate multiple terms with a comma or semicolon; an alert matches if it contains any of them.",
+            "exclude_text": "Separate multiple terms with a comma or semicolon; an alert must contain none of them.",
+            "incident_window": "How long follow-up alerts are grouped into the same incident."
+          }
         }
+      },
+      "error": {
+        "name_exists": "A sensor with this name already exists."
       }
     }
   }

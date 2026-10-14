@@ -40,9 +40,11 @@ API_TIMEOUT = 15
 LOCAL_TZ = dt_util.get_time_zone("Europe/Amsterdam")
 
 
-def storage_key(entry_id: str) -> str:
-    """Per-entry storage key so entries never overwrite each other's history."""
-    return f"{STORAGE_KEY}.{entry_id}"
+def storage_key(storage_id: str) -> str:
+    """Per-sensor storage key so sensors never overwrite each other's history."""
+    return f"{STORAGE_KEY}.{storage_id}"
+
+
 REGIONS = {
     "1": "Amsterdam-Amstelland", "2": "Groningen", "3": "Noord- en Oost-Gelderland",
     "4": "Zaanstreek-Waterland", "5": "Hollands Midden", "6": "Brabant-Noord",
@@ -339,20 +341,25 @@ class P2000FeedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
 
 class P2000FilterProcessor:
-    """Apply one config entry's filters to the shared feed and track its incidents."""
+    """Apply one sensor's filters to the shared feed and track its incidents."""
 
     def __init__(
         self,
         hass: HomeAssistant,
         feed: P2000FeedCoordinator,
-        entry_id: str,
+        storage_id: str,
+        *,
+        entry_id: str | None = None,
+        subentry_id: str | None = None,
         exclude_capcodes=None,
         incident_window=DEFAULT_INCIDENT_WINDOW,
         api_filter=None,
     ) -> None:
         self.hass = hass
         self.feed = feed
+        self.storage_id = storage_id
         self.entry_id = entry_id
+        self.subentry_id = subentry_id
         # Set by the sensor once it is added, so events can name it.
         self.entity_id: str | None = None
         self.exclude_capcodes = {normalize_capcode(x) for x in (exclude_capcodes or []) if normalize_capcode(x)}
@@ -371,7 +378,7 @@ class P2000FilterProcessor:
         self._incidents: deque[dict[str, Any]] = deque(maxlen=MAX_INCIDENT_HISTORY)
         # Accepted messages by id, newest first, kept beyond the short API feed window.
         self._history: dict[str, dict[str, Any]] = {}
-        self._store = Store(hass, STORAGE_VERSION, storage_key(entry_id))
+        self._store = Store(hass, STORAGE_VERSION, storage_key(storage_id))
         self._listeners: list[Callable[[], None]] = []
         self._unsub_feed: Callable[[], None] | None = None
         self._last_feed_data: dict[str, Any] | None = None
@@ -461,7 +468,7 @@ class P2000FilterProcessor:
     @callback
     def _fire_events(self, new_messages: list[dict[str, Any]], incident_changes: list[dict[str, Any]]) -> None:
         """Fire one filter-match event per accepted new message, plus incident events."""
-        base = {"entry_id": self.entry_id, "sensor": self.entity_id}
+        base = {"entry_id": self.entry_id, "subentry_id": self.subentry_id, "sensor": self.entity_id}
         for message in reversed(new_messages):  # oldest first
             self.hass.bus.async_fire(
                 EVENT_FILTER_MATCH, {**base, "message": message, "filter": self.api_filter}

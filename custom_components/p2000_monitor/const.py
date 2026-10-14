@@ -14,6 +14,15 @@ CONF_INCLUDE_TEXT = "include_text"
 CONF_EXCLUDE_TEXT = "exclude_text"
 CONF_INCIDENT_WINDOW = "incident_window"
 
+# The single config entry and its per-sensor subentries.
+HUB_TITLE = "P2000 Monitor"
+SUBENTRY_SENSOR = "sensor"
+# Set on sensors migrated from the old one-entry-per-sensor setup, so they keep
+# their entity unique_id and stored history.
+CONF_ENTITY_KEY = "entity_key"
+CONF_STORAGE_ID = "storage_id"
+DATA_MIGRATION_LOCK = f"{DOMAIN}_migration_lock"
+
 from datetime import timedelta
 
 DEFAULT_SCAN_INTERVAL = 10
