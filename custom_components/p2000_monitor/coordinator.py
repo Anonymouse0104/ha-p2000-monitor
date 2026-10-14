@@ -123,6 +123,21 @@ def _published(item: dict[str, Any]) -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _flatten_items(items: list[Any]) -> list[dict[str, Any]]:
+    """Return feed items including the alarms nested under 'subitems'."""
+    result: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        result.append(item)
+        subitems = item.get("subitems")
+        if isinstance(subitems, dict):
+            subitems = list(subitems.values())
+        if isinstance(subitems, list):
+            result.extend(_flatten_items(subitems))
+    return result
+
+
 def normalize_api_message(item: dict[str, Any]) -> dict[str, Any] | None:
     message = _as_text(item.get("tekstmelding") or item.get("message") or item.get("melding"))
     if not message:
@@ -131,6 +146,7 @@ def normalize_api_message(item: dict[str, Any]) -> dict[str, Any] | None:
     region = _region_id(item)
     capcodes = _capcodes(item)
     result = {
+        "api_id": _as_text(item.get("id")),
         "message": message,
         "melding": _as_text(item.get("melding") or message),
         "tekstmelding": message,
@@ -167,7 +183,11 @@ class P2000DataCoordinator(DataUpdateCoordinator):
 
     @staticmethod
     def _generate_message_id(data):
-        raw = "|".join(str(data.get(k, "")) for k in ("published", "capcode", "message", "regio", "discipline"))
+        # The API id is stable across polls; only fall back to a content hash without it.
+        if data.get("api_id"):
+            return f"ad-{data['api_id']}"
+        raw = "|".join(str(data.get(k, "")) for k in ("published", "message", "regio", "discipline"))
+        raw += "|" + ",".join(data.get("capcodes") or [str(data.get("capcode", ""))])
         return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
     async def async_load_incident_history(self):
@@ -371,11 +391,10 @@ class P2000DataCoordinator(DataUpdateCoordinator):
         if not isinstance(items, list):
             raise ValueError("AlarmeringDroid API returned no 'meldingen'/'items' list")
         messages = []
-        for item in items:
-            if isinstance(item, dict):
-                message = normalize_api_message(item)
-                if message:
-                    messages.append(message)
+        for item in _flatten_items(items):
+            message = normalize_api_message(item)
+            if message:
+                messages.append(message)
         _LOGGER.info("P2000 API returned %s messages; normalized %s", len(items), len(messages))
         return messages
 
