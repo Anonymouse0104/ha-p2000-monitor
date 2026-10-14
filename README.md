@@ -1,120 +1,55 @@
+<p align="center"><img src="logo.png" alt="P2000 Monitor" width="330"></p>
+
 # P2000 Monitor for Home Assistant
 
-Home Assistant integration for live Dutch P2000 emergency alerts using the structured **AlarmeringDroid API**.
+Live Dutch P2000 emergency alerts in Home Assistant, from the structured **AlarmeringDroid API**. Like [P2Kflex](https://monitor.p2kflex.nl/), you decide which alerts you follow: create as many sensors as you want, each with its own safety regions, services, priorities, capcodes and text filters.
 
-## v0.7.0
+## Features
 
-One shared poll for all sensors, deduplication on the AlarmeringDroid message id, one event per new message, and no more YAML support. See the release notes for upgrade steps.
+- **Your own sensors** — add the integration once, then use **Add sensor** for every view you want: all of the Netherlands, your own safety region, the fire brigade in two regions, or one station by capcode.
+- **One poll for everything** — the national feed is fetched once every 10 seconds, however many sensors you have.
+- **No missed or duplicate alerts** — every alert is deduplicated on its AlarmeringDroid id and fires exactly one event.
+- **History per sensor** — each sensor keeps the last 100 matching alerts, also across restarts, so a quiet region still shows its latest alert.
+- **Incidents** — follow-up alarms with similar text in the same region are grouped into one incident.
+- **Events for automations** — `p2000_monitor_new_message`, `p2000_monitor_filter_match`, `p2000_monitor_new_incident` and `p2000_monitor_incident_update`.
 
-### Core behaviour
+## Installation
 
-- The integration fetches the complete AlarmeringDroid feed once for all sensors and applies each sensor's filters locally.
-- **P2000 Monitor** can run without any filters and therefore shows all regions and all supported emergency services.
-- Config Flow sensors can independently filter by region, discipline, priority, capcode and text.
-- Capcode filtering checks **all capcodes in an alert**, not only the first capcode.
-- A Config Flow sensor does not apply its filter twice.
-- The newest matching message is selected by publication timestamp.
-- Correct Dutch Veiligheidsregio names are used, including **Limburg-Noord** and **Zuid-Limburg**.
-- The integration includes an `icon.svg` logo.
-- No `sensor.yaml` configuration is required for Config Flow sensors.
+1. In **HACS**, open the menu (⋮) → **Custom repositories**, add `https://github.com/Anonymouse0104/ha-p2000-monitor` as type **Integration**.
+2. Install **P2000 Monitor** and restart Home Assistant.
+3. Go to **Settings → Devices & services → Add integration → P2000 Monitor** and set up your first sensor.
 
-## Recommended sensor setup
+Requires Home Assistant 2025.6 or newer.
 
-The integration does **not** hard-code these sensors. Create them yourself through **Settings → Devices & services → P2000 Monitor → Dienst toevoegen**. This makes the integration reusable for other Home Assistant users while giving each user complete control over their own filters.
+## Adding sensors
 
-| Sensor | Configuration |
+Open **Settings → Devices & services → P2000 Monitor** and click **Add sensor**. Every sensor becomes its own entity (`sensor.<name>`). Use the ⋮ menu next to a sensor to change or delete it.
+
+| Filter | Meaning |
 |---|---|
-| **P2000 Monitor** | **No filters**. Enable **Toon alle meldingen**. Leave region, discipline, priority and capcodes empty. |
-| **P2000 Test** | Regions **Limburg-Noord** and **Zuid-Limburg** + discipline **Brandweer**. No capcode filter. |
-| **Brandweer Echt** | **Capcode filter only**. Do not select a region or discipline filter. |
-| **Brandweer Limburg-Noord** | Region **Limburg-Noord** + discipline **Brandweer**. |
-| **Brandweer Zuid-Limburg** | Region **Zuid-Limburg** + discipline **Brandweer**. |
-| **Brandweer Limburg** | **Do not create this sensor**. It is intentionally replaced by the two separate regional sensors above. |
+| **Show all alerts** | All of the Netherlands; ignores region, service, priority and capcode filters (text filters still apply). |
+| **Safety regions** | One or more of the 25 Veiligheidsregio's. |
+| **Services** | Politie, Brandweer, Ambulance, KNRM, Lifeliner, DARES. |
+| **Priorities** | P1 to P5 (as written in the alert text). |
+| **Capcodes** | Comma separated; an alert matches if any of its capcodes matches. |
+| **Text must contain / must not contain** | Comma separated terms. |
+| **Incident grouping window** | How long follow-up alerts join the same incident. |
 
-### Why this layout?
+Values **within** one filter are **OR**, different filters are **AND**. Empty filters are ignored.
 
-The sensors deliberately test different filtering layers:
+### Examples
 
-1. **P2000 Monitor** is the reference feed. If a message is not here, it was not received by this integration.
-2. **P2000 Test** tests the combination of two regions and the Brandweer discipline.
-3. **Brandweer Echt** tests capcode matching independently from the region/discipline filter.
-4. **Brandweer Limburg-Noord** tests region + Brandweer.
-5. **Brandweer Zuid-Limburg** tests region + Brandweer.
+| Sensor | Settings |
+|---|---|
+| **P2000 Nederland** | Show all alerts |
+| **Brandweer Limburg** | Regions *Limburg-Noord* + *Zuid-Limburg*, service *Brandweer* |
+| **Ambulance Utrecht** | Region *Utrecht*, service *Ambulance* |
+| **Kazerne Echt** | Capcodes `1005258, 1005264` |
+| **Zeer urgent** | Priority *P1* |
 
-This separation makes troubleshooting deterministic instead of mixing several filter mechanisms into one sensor.
+## Upgrading from 0.7 or older
 
-## Configure a sensor
-
-Every Config Flow entry is an independent sensor. A different user can install the integration and select completely different filters.
-
-Available filters:
-
-- **Toon alle meldingen** — disables filtering and shows the complete national feed.
-- **Veiligheidsregio's** — one or more regions.
-- **Diensten** — one or more emergency services.
-- **Prioriteiten** — P1 through P5.
-- **Capcodes** — one or more capcodes; any matching capcode in the alert is sufficient.
-- **Tekst moet bevatten** — one or more terms.
-- **Tekst mag niet bevatten** — one or more terms.
-- **Incident-koppeltijd** — controls when follow-up alarms are grouped into the same incident.
-
-Multiple values inside one filter use **OR** logic. Different filter categories use **AND** logic.
-
-Capcodes and text values can be separated with commas or semicolons.
-
-### Important: P2000 Monitor has no filters
-
-For the national monitor:
-
-- Name: `P2000 Monitor`
-- **Toon alle meldingen: ON**
-- Regions: empty
-- Diensten: empty
-- Priorities: empty
-- Capcodes: empty
-- Include text: empty
-- Exclude text: empty
-
-This is intentionally different from **P2000 Test**.
-
-## Clean installation / migration
-
-For an existing installation that has gone through several development versions, a clean reinstall is recommended before testing v0.7.0. This prevents old Config Entries, stale entity registry entries and legacy `sensor.yaml` filters from obscuring whether the new integration is working correctly.
-
-### Recommended clean-install procedure
-
-1. **Back up Home Assistant.**
-2. Open **Settings → Devices & services**.
-3. Open every **P2000 Monitor** Config Entry.
-4. Delete the old P2000 Monitor Config Entries and their entities. This includes the old `P2000 Test`, `Brandweer Echt`, `Brandweer Limburg`, `Brandweer Limburg-Noord`, `Brandweer Zuid-Limburg` and any duplicate P2000 entries.
-5. Remove the old P2000 filter block from `sensor.yaml`. Do not leave the old YAML filters active alongside the Config Flow integration.
-6. Restart Home Assistant once so the old entities and YAML sensors are gone.
-7. In HACS, update **P2000 Monitor** to **v0.7.0**. If HACS shows the custom integration as removable and you want a completely clean filesystem install, remove it first, restart, then reinstall it from the same repository.
-8. Restart Home Assistant again after installation.
-9. Add **P2000 Monitor** through **Settings → Devices & services → Add Integration**.
-10. Create the five sensors from the table above.
-11. Do **not** create `Brandweer Limburg`.
-12. Leave `sensor.yaml` completely out of the new P2000 setup.
-13. Wait for a real P2000 message and compare the five sensors.
-
-### Do I really need to remove the current integration?
-
-**For your installation: yes, I recommend it.** We have tested several development releases and have already had legacy YAML filters and multiple Config Flow entries active at the same time. Keeping those around makes a failed test ambiguous.
-
-A clean install gives us a hard baseline:
-
-```text
-AlarmeringDroid
-      ↓
-P2000 Monitor — everything
-      ↓
-┌───────────────┬────────────────┬──────────────────┐
-P2000 Test      Brandweer Echt  Regional sensors
-VRLN + VRZL     capcodes only   VRLN / VRZL + BW
-+ Brandweer
-```
-
-If **P2000 Monitor** receives a message but one of the filtered sensors does not, the problem is in the filter logic. If **P2000 Monitor** itself does not receive it, we investigate the API/coordinator instead. That distinction is the key to debugging the next version.
+Before 0.8, every sensor was a separate integration entry. On the first start of 0.8 these are merged automatically into one **P2000 Monitor** entry with one sensor per old entry. Entity IDs, history and stored alerts are kept, so dashboards and automations keep working.
 
 ## AlarmeringDroid region IDs
 
@@ -150,20 +85,20 @@ The feed is polled once for all sensors. Each message is deduplicated on its Ala
 | Event | Fired | Data |
 |---|---|---|
 | `p2000_monitor_new_message` | once per new message, for the whole feed | `message` |
-| `p2000_monitor_filter_match` | once per new message per sensor whose filters accept it | `message`, `filter`, `entry_id`, `sensor` |
-| `p2000_monitor_new_incident` / `p2000_monitor_incident_update` | per sensor | `incident`, `message`, `entry_id`, `sensor` |
+| `p2000_monitor_filter_match` | once per new message per sensor whose filters accept it | `message`, `filter`, `entry_id`, `subentry_id`, `sensor` |
+| `p2000_monitor_new_incident` / `p2000_monitor_incident_update` | per sensor | `incident`, `message`, `entry_id`, `subentry_id`, `sensor` |
 
-Use `p2000_monitor_filter_match` with a `sensor` condition for automations on one filtered sensor. `p2000_monitor_new_message` no longer carries a `sensor` field.
+Use `p2000_monitor_filter_match` with a `sensor` condition (for example `sensor.brandweer_limburg`) for automations on one sensor. `p2000_monitor_new_message` has no `sensor` field.
 
 The large attributes `meldingen`, `incidenten`, `incident_history`, `incident` and `capcodes` are available in the state machine but are not stored by the recorder.
 
 ## Legacy YAML
 
-YAML configuration (`sensor: - platform: p2000_monitor`) is no longer supported. Remove it from `configuration.yaml`, then delete the orphaned `p2000_monitor_main` / `..._legacy_N` entities under **Settings → Entities**. The `inject_test_incident` service now works with Config Flow sensors.
+YAML configuration (`sensor: - platform: p2000_monitor`) is no longer supported. Remove it from `configuration.yaml`, then delete the orphaned `p2000_monitor_main` / `..._legacy_N` entities under **Settings → Entities**.
 
 ## Data source
 
-The integration uses the structured AlarmeringDroid API.
+Alerts come from the AlarmeringDroid API. Its feed only holds the latest ~30 national alerts, which is why every sensor keeps its own history.
 
 ## License
 
