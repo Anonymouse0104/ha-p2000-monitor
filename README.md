@@ -2,13 +2,13 @@
 
 Home Assistant integration for live Dutch P2000 emergency alerts using the structured **AlarmeringDroid API**.
 
-## v0.6.1
+## v0.7.0
 
-This release defines a clean recommended sensor setup for Home Assistant while keeping every sensor independently configurable through the Config Flow.
+One shared poll for all sensors, deduplication on the AlarmeringDroid message id, one event per new message, and no more YAML support. See the release notes for upgrade steps.
 
 ### Core behaviour
 
-- The integration fetches the complete AlarmeringDroid feed and applies configured filters locally.
+- The integration fetches the complete AlarmeringDroid feed once for all sensors and applies each sensor's filters locally.
 - **P2000 Monitor** can run without any filters and therefore shows all regions and all supported emergency services.
 - Config Flow sensors can independently filter by region, discipline, priority, capcode and text.
 - Capcode filtering checks **all capcodes in an alert**, not only the first capcode.
@@ -79,7 +79,7 @@ This is intentionally different from **P2000 Test**.
 
 ## Clean installation / migration
 
-For an existing installation that has gone through several development versions, a clean reinstall is recommended before testing v0.6.1. This prevents old Config Entries, stale entity registry entries and legacy `sensor.yaml` filters from obscuring whether the new integration is working correctly.
+For an existing installation that has gone through several development versions, a clean reinstall is recommended before testing v0.7.0. This prevents old Config Entries, stale entity registry entries and legacy `sensor.yaml` filters from obscuring whether the new integration is working correctly.
 
 ### Recommended clean-install procedure
 
@@ -89,7 +89,7 @@ For an existing installation that has gone through several development versions,
 4. Delete the old P2000 Monitor Config Entries and their entities. This includes the old `P2000 Test`, `Brandweer Echt`, `Brandweer Limburg`, `Brandweer Limburg-Noord`, `Brandweer Zuid-Limburg` and any duplicate P2000 entries.
 5. Remove the old P2000 filter block from `sensor.yaml`. Do not leave the old YAML filters active alongside the Config Flow integration.
 6. Restart Home Assistant once so the old entities and YAML sensors are gone.
-7. In HACS, update **P2000 Monitor** to **v0.6.1**. If HACS shows the custom integration as removable and you want a completely clean filesystem install, remove it first, restart, then reinstall it from the same repository.
+7. In HACS, update **P2000 Monitor** to **v0.7.0**. If HACS shows the custom integration as removable and you want a completely clean filesystem install, remove it first, restart, then reinstall it from the same repository.
 8. Restart Home Assistant again after installation.
 9. Add **P2000 Monitor** through **Settings → Devices & services → Add Integration**.
 10. Create the five sensors from the table above.
