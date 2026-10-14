@@ -25,6 +25,7 @@ from .const import (
     EVENT_INCIDENT_UPDATE,
     EVENT_NEW_INCIDENT,
     EVENT_NEW_MESSAGE,
+    MAX_BACKOFF,
     MAX_EVENT_AGE,
     MAX_INCIDENT_HISTORY,
     MAX_SEEN_MESSAGES,
@@ -250,6 +251,7 @@ class P2000FeedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._seen_order: deque[str] = deque()
         self._initialized = False
         self.setup_lock = asyncio.Lock()
+        self.last_success_time: datetime | None = None
         super().__init__(
             hass,
             _LOGGER,
@@ -267,15 +269,19 @@ class P2000FeedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._seen_ids.add(message_id)
 
     async def _fetch_api(self) -> list[dict[str, Any]]:
-        _LOGGER.info("P2000 API: fetching complete unfiltered feed")
-        headers = {"User-Agent": "P2000-Monitor/0.5.7 Home Assistant", "Accept": "application/json, text/plain, */*"}
+        headers = {"User-Agent": "P2000-Monitor Home Assistant", "Accept": "application/json, text/plain, */*"}
         session = async_get_clientsession(self.hass)
         async with session.get(API_URL, headers=headers, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)) as response:
             response.raise_for_status()
             raw = await response.json(content_type=None)
-        items = raw.get("meldingen") if isinstance(raw, dict) else None
-        if items is None and isinstance(raw, dict):
-            items = raw.get("items")
+        if isinstance(raw, list):
+            items = raw
+        elif isinstance(raw, dict):
+            items = raw.get("meldingen")
+            if items is None:
+                items = raw.get("items")
+        else:
+            items = None
         if not isinstance(items, list):
             raise ValueError("AlarmeringDroid API returned no 'meldingen'/'items' list")
         messages = []
@@ -283,15 +289,19 @@ class P2000FeedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             message = normalize_api_message(item)
             if message:
                 messages.append(message)
-        _LOGGER.info("P2000 API returned %s messages; normalized %s", len(items), len(messages))
+        _LOGGER.debug("P2000 API returned %s items; normalized %s messages", len(items), len(messages))
         return messages
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             messages = await self._fetch_api()
-        except Exception as err:
-            _LOGGER.exception("AlarmeringDroid API update mislukt")
-            raise UpdateFailed(f"AlarmeringDroid API update mislukt: {err}") from err
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            # Back off while the API is down; the coordinator itself logs the
+            # failure once and the recovery once, so no traceback per poll.
+            self.update_interval = min(self.update_interval * 2, MAX_BACKOFF)
+            raise UpdateFailed(f"AlarmeringDroid API update mislukt: {err!r}") from err
+        self.update_interval = timedelta(seconds=DEFAULT_SCAN_INTERVAL)
+        self.last_success_time = dt_util.utcnow()
         messages.sort(key=message_sort_key, reverse=True)
         new_messages = self._detect_new(messages)
         for message in reversed(new_messages):  # oldest first
@@ -407,7 +417,7 @@ class P2000FilterProcessor:
     def _apply(self, feed_data: dict[str, Any], process_new: bool) -> None:
         messages = [m for m in feed_data.get("messages") or [] if self._accepts(m)]
         new_messages = [m for m in feed_data.get("new_messages") or [] if self._accepts(m)] if process_new else []
-        _LOGGER.info("P2000 after local filters: %s messages (from %s)", len(messages), len(feed_data.get("messages") or []))
+        _LOGGER.debug("P2000 after local filters: %s messages (from %s)", len(messages), len(feed_data.get("messages") or []))
         incident_changes = self._process_live_batch(new_messages)
         if incident_changes:
             self._store.async_delay_save(self._data_to_save, 10)
