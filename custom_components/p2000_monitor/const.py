@@ -22,6 +22,9 @@ EVENT_NEW_INCIDENT = "p2000_monitor_new_incident"
 EVENT_INCIDENT_UPDATE = "p2000_monitor_incident_update"
 
 MAX_SEEN_MESSAGES = 1000
+# New messages older than this (seconds) are deduplicated but fire no event,
+# e.g. when the feed comes back after a long outage.
+MAX_EVENT_AGE = 3600
 MAX_HISTORY = 100
 
 DEFAULT_INCIDENT_WINDOW = 120
