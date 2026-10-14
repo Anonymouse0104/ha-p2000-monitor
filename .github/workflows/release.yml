@@ -1,5 +1,9 @@
 name: Create release
 
+# Push a commit whose message contains "prepare vX.Y.Z" to main. The version is
+# read from manifest.json and the notes from .github/release-notes.md, so this
+# workflow does not need editing per release.
+
 on:
   push:
     branches:
@@ -10,15 +14,22 @@ permissions:
 
 jobs:
   release:
-    if: contains(github.event.head_commit.message, 'prepare v0.6.2')
+    if: contains(github.event.head_commit.message, 'prepare v')
     runs-on: ubuntu-latest
     steps:
-      - name: Create v0.6.2 release
+      - uses: actions/checkout@v4
+
+      - name: Create release from manifest version
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.6.2 \
+          version="v$(jq -r .version custom_components/p2000_monitor/manifest.json)"
+          if gh release view "$version" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $version already exists, skipping."
+            exit 0
+          fi
+          gh release create "$version" \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "P2000 Monitor v0.6.2 – visible incident history" \
-            --notes "## P2000 Monitor v0.6.2\n\n### Incident history\n- Filtered sensors now build a visible incident history directly from their already-filtered message feed.\n- VRLN, VRZL and Echt therefore show only incidents that actually match that sensor's filters.\n- Each incident includes message count, capcodes, timestamps, region, discipline and the underlying messages.\n- Up to 10 incidents are exposed through `incident_history` / `incidenten`.\n- The existing coordinator incident data remains available as a fallback.\n\n### Result\nYou can inspect the incident history directly in the attributes of the filtered sensor instead of opening individual entities for every message."
+            --title "P2000 Monitor $version" \
+            --notes-file .github/release-notes.md
