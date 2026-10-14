@@ -1,10 +1,13 @@
-## P2000 Monitor v0.7.1
+## P2000 Monitor v0.8.0
 
-### Opgelost
-- **Gefilterde sensors bleven op "Geen meldingen" staan.** De AlarmeringDroid-feed bevat alleen de laatste ~30 meldingen van heel Nederland, vaak minder dan een half uur. Een sensor liet alleen meldingen zien die op dat moment nog in die feed stonden. Nu houdt elke sensor zelf een eigen geschiedenis bij van de laatste 100 meldingen die bij zijn filters passen.
-- Deze geschiedenis blijft bewaard na een herstart en na het wijzigen van de opties. Na het wijzigen van de filters worden de opgeslagen meldingen opnieuw gecontroleerd.
-- Wijzigingen die nog niet waren weggeschreven, gingen verloren bij het herladen van een sensor. Die worden nu direct opgeslagen.
+### Nieuw: zelf sensoren aanmaken binnen één integratie
+- **P2000 Monitor voeg je één keer toe.** Daarna maak je via **Sensor toevoegen** zoveel sensoren als je wilt, net als bij P2Kflex. Elke sensor heeft eigen veiligheidsregio's, diensten, prioriteiten, capcodes en tekstfilters.
+- Een sensor wijzig of verwijder je via het ⋮-menu naast de sensor.
+- Nieuw icoon en logo, zichtbaar in Home Assistant (ook in de donkere modus).
+- Formulieren zijn nu volledig vertaald (Nederlands en Engels).
 
-Na het bijwerken begint de geschiedenis leeg. De eerstvolgende melding die bij je filters past, blijft vanaf dan staan.
+### Automatische overstap
+Had je per sensor een aparte P2000 Monitor-integratie? Bij de eerste start worden die **automatisch samengevoegd** tot één P2000 Monitor met een sensor per oude integratie. Entity-ID's, historie en opgeslagen meldingen blijven behouden, dus je dashboards en automations blijven werken. Je hoeft niets te doen.
 
-Zie de [v0.7.0-release](https://github.com/Anonymouse0104/ha-p2000-monitor/releases/tag/v0.7.0) voor de grote wijzigingen van de vorige versie.
+### Vereist
+Home Assistant 2025.6 of nieuwer.
