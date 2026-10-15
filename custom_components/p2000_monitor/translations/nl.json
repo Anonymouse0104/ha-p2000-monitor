@@ -13,14 +13,21 @@
           "capcodes": "Capcodes",
           "include_text": "Tekst moet bevatten",
           "exclude_text": "Tekst mag niet bevatten",
-          "incident_window": "Incident-koppeltijd (seconden)"
+          "incident_window": "Incident-koppeltijd (seconden)",
+          "vehicles": "Voertuigen (roepnummers)",
+          "radius_km": "Straal rond thuis (km)",
+          "display": "Weergave"
         },
         "data_description": {
           "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters. De tekstfilters blijven gelden.",
           "capcodes": "Meerdere capcodes scheiden met komma of puntkomma. Een melding wordt geaccepteerd als één van de capcodes overeenkomt.",
           "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; de melding wordt geaccepteerd als één van de woorden voorkomt.",
           "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
-          "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden."
+          "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden.",
+          "vehicles": "Roepnummers uit de pagertekst, bijvoorbeeld 24-0733 of 240733. Een melding wordt geaccepteerd als één van de voertuigen gealarmeerd is.",
+          "radius_km": "Alleen meldingen binnen deze afstand van je thuislocatie in Home Assistant. 0 = uit. Meldingen zonder locatie vallen weg zodra je dit gebruikt.",
+          "display": "Wat de sensor als status toont: de leesbare meldingtekst of de originele pagertekst.",
+          "priorities": "P1 geldt ook voor ambulance A1, P2 voor A2 en P3 voor B."
         }
       }
     },
@@ -47,14 +54,21 @@
             "capcodes": "Capcodes",
             "include_text": "Tekst moet bevatten",
             "exclude_text": "Tekst mag niet bevatten",
-            "incident_window": "Incident-koppeltijd (seconden)"
+            "incident_window": "Incident-koppeltijd (seconden)",
+            "vehicles": "Voertuigen (roepnummers)",
+            "radius_km": "Straal rond thuis (km)",
+            "display": "Weergave"
           },
           "data_description": {
             "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters. De tekstfilters blijven gelden.",
             "capcodes": "Meerdere capcodes scheiden met komma of puntkomma. Een melding wordt geaccepteerd als één van de capcodes overeenkomt.",
             "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; de melding wordt geaccepteerd als één van de woorden voorkomt.",
             "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
-            "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden."
+            "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden.",
+            "vehicles": "Roepnummers uit de pagertekst, bijvoorbeeld 24-0733 of 240733. Een melding wordt geaccepteerd als één van de voertuigen gealarmeerd is.",
+            "radius_km": "Alleen meldingen binnen deze afstand van je thuislocatie in Home Assistant. 0 = uit. Meldingen zonder locatie vallen weg zodra je dit gebruikt.",
+            "display": "Wat de sensor als status toont: de leesbare meldingtekst of de originele pagertekst.",
+            "priorities": "P1 geldt ook voor ambulance A1, P2 voor A2 en P3 voor B."
           }
         },
         "reconfigure": {
@@ -69,19 +83,34 @@
             "capcodes": "Capcodes",
             "include_text": "Tekst moet bevatten",
             "exclude_text": "Tekst mag niet bevatten",
-            "incident_window": "Incident-koppeltijd (seconden)"
+            "incident_window": "Incident-koppeltijd (seconden)",
+            "vehicles": "Voertuigen (roepnummers)",
+            "radius_km": "Straal rond thuis (km)",
+            "display": "Weergave"
           },
           "data_description": {
             "all_services": "Toont alle P2000-meldingen uit Nederland en negeert regio-, dienst-, prioriteits- en capcodefilters. De tekstfilters blijven gelden.",
             "capcodes": "Meerdere capcodes scheiden met komma of puntkomma. Een melding wordt geaccepteerd als één van de capcodes overeenkomt.",
             "include_text": "Meerdere zoekwoorden scheiden met komma of puntkomma; de melding wordt geaccepteerd als één van de woorden voorkomt.",
             "exclude_text": "Meerdere woorden scheiden met komma of puntkomma; geen van deze woorden mag voorkomen.",
-            "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden."
+            "incident_window": "Hoe lang vervolgmeldingen aan hetzelfde incident gekoppeld mogen worden.",
+            "vehicles": "Roepnummers uit de pagertekst, bijvoorbeeld 24-0733 of 240733. Een melding wordt geaccepteerd als één van de voertuigen gealarmeerd is.",
+            "radius_km": "Alleen meldingen binnen deze afstand van je thuislocatie in Home Assistant. 0 = uit. Meldingen zonder locatie vallen weg zodra je dit gebruikt.",
+            "display": "Wat de sensor als status toont: de leesbare meldingtekst of de originele pagertekst.",
+            "priorities": "P1 geldt ook voor ambulance A1, P2 voor A2 en P3 voor B."
           }
         }
       },
       "error": {
         "name_exists": "Er bestaat al een sensor met deze naam."
+      }
+    }
+  },
+  "selector": {
+    "display": {
+      "options": {
+        "text": "Meldingtekst (Brandweer met spoed naar …)",
+        "pager": "Pagertekst (P 1 BR woning …)"
       }
     }
   }

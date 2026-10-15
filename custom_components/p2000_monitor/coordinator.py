@@ -17,6 +17,15 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
+from .enrich import (
+    capcode_details,
+    distance_km,
+    extract_vehicles,
+    normalize_vehicle,
+    parse_priority,
+    to_float,
+)
+
 from .const import (
     DEFAULT_INCIDENT_WINDOW,
     DEFAULT_SCAN_INTERVAL,
@@ -59,8 +68,19 @@ SERVICES = {"1": "Politiediensten", "2": "Brandweerdiensten", "3": "Ambulancedie
 
 
 def extract_priority(text: str) -> str | None:
-    match = re.search(r"\bP\s*([1-5])\b", str(text).upper())
-    return f"P{match.group(1)}" if match else None
+    """Priority label (P1-P5, A1, A2, B) of a pager or message text."""
+    return parse_priority(text)[0]
+
+
+def message_urgency(message: dict[str, Any]) -> int | None:
+    """Urgency 1-5 of a message (1 = most urgent), also for injected test messages."""
+    if message.get("urgency"):
+        return message["urgency"]
+    return parse_priority(message.get("pager_text") or message.get("message") or "")[1]
+
+
+def message_vehicles(message: dict[str, Any]) -> set[str]:
+    return {v["id"] if isinstance(v, dict) else normalize_vehicle(v) for v in message.get("vehicles") or []}
 
 
 def normalize_incident_text(text: str) -> str:
@@ -211,11 +231,21 @@ def normalize_api_message(item: dict[str, Any]) -> dict[str, Any] | None:
     service_id = _as_text(item.get("dienstid") or item.get("dienst_id") or item.get("dienst"))
     region = _region_id(item)
     capcodes = _capcodes(item)
+    pager_text = _as_text(item.get("melding")) or message
+    priority, urgency = parse_priority(pager_text, item.get("prio1"))
     result = {
         "api_id": _as_text(item.get("id")),
         "message": message,
-        "melding": _as_text(item.get("melding") or message),
+        "melding": pager_text,
         "tekstmelding": message,
+        "pager_text": pager_text,
+        "priority": priority,
+        "urgency": urgency,
+        "grip": int(_as_text(item.get("grip")) or 0) if _as_text(item.get("grip")).isdigit() else 0,
+        "vehicles": [{"id": v} for v in extract_vehicles(pager_text, service_id)],
+        "capcode_details": capcode_details(item.get("capcodes"), normalize_capcode),
+        "street": _as_text(item.get("straat")),
+        "postcode": _as_text(item.get("postcode")),
         "capcode": capcodes[0] if capcodes else "",
         "capcodes": capcodes,
         "regio": region,
@@ -291,9 +321,19 @@ class P2000FeedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for item in _flatten_items(items):
             message = normalize_api_message(item)
             if message:
+                self._add_distance(message)
                 messages.append(message)
         _LOGGER.debug("P2000 API returned %s items; normalized %s messages", len(items), len(messages))
         return messages
+
+    def _add_distance(self, message: dict[str, Any]) -> None:
+        """Distance from the Home Assistant home location, for the radius filter."""
+        lat, lon = to_float(message.get("latitude")), to_float(message.get("longitude"))
+        home_lat, home_lon = self.hass.config.latitude, self.hass.config.longitude
+        if lat is None or lon is None or home_lat is None or home_lon is None:
+            message["distance_km"] = None
+        else:
+            message["distance_km"] = round(distance_km(home_lat, home_lon, lat, lon), 1)
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
@@ -354,7 +394,9 @@ class P2000FilterProcessor:
         exclude_capcodes=None,
         incident_window=DEFAULT_INCIDENT_WINDOW,
         api_filter=None,
+        match_any_unit: bool = False,
     ) -> None:
+        self.match_any_unit = match_any_unit
         self.hass = hass
         self.feed = feed
         self.storage_id = storage_id
@@ -370,7 +412,14 @@ class P2000FilterProcessor:
             "regions": {str(x) for x in self.api_filter.get("regios", [])},
             "services": {str(x) for x in self.api_filter.get("diensten", [])},
             "capcodes": {normalize_capcode(x) for x in self.api_filter.get("capcodes", []) if normalize_capcode(x)},
-            "priorities": {str(x).upper().replace(" ", "") for x in self.api_filter.get("priorities", [])},
+            # P1-P5 as urgency 1-5, so P1 also matches ambulance A1 (and P3 matches B).
+            "priorities": {
+                int(m.group(1))
+                for x in self.api_filter.get("priorities", [])
+                if (m := re.search(r"([1-5])", str(x)))
+            },
+            "vehicles": {normalize_vehicle(x) for x in self.api_filter.get("vehicles", []) if str(x).strip()},
+            "radius_km": float(self.api_filter.get("radius_km") or 0),
             "include": [str(x).strip().lower() for x in self.api_filter.get("include_text", []) if str(x).strip()],
             "exclude": [str(x).strip().lower() for x in self.api_filter.get("exclude_text", []) if str(x).strip()],
         }
@@ -438,9 +487,12 @@ class P2000FilterProcessor:
         added = False
         for message in messages:
             message_id = message.get("message_id")
-            if message_id and message_id not in self._history:
-                self._history[message_id] = message
+            if not message_id:
+                continue
+            if message_id not in self._history:
                 added = True
+            # Replace known ones too, so later enrichment (vehicle names) shows up.
+            self._history[message_id] = message
         if added:
             ordered = sorted(self._history.values(), key=message_sort_key, reverse=True)[:MAX_HISTORY]
             self._history = {m["message_id"]: m for m in ordered}
@@ -516,20 +568,37 @@ class P2000FilterProcessor:
         return bool(_message_capcodes(message) & self.exclude_capcodes)
 
     def _passes_filters(self, message):
-        """OR between the values of one filter, AND between filters."""
+        """OR between the values of one filter, AND between filters.
+
+        In 'any unit' mode (capcode/vehicle watches) capcodes and vehicles
+        together form one OR filter: either alerting the unit is enough.
+        """
         f = self._filters
         if f["regions"] and str(message.get("regio", "")) not in f["regions"]:
             return False
         if f["services"] and str(message.get("dienstid", "")) not in f["services"]:
             return False
-        if f["capcodes"] and not (_message_capcodes(message) & f["capcodes"]):
-            return False
+        capcode_hit = bool(f["capcodes"] and _message_capcodes(message) & f["capcodes"])
+        vehicle_hit = bool(f["vehicles"] and message_vehicles(message) & f["vehicles"])
+        if self.match_any_unit:
+            if (f["capcodes"] or f["vehicles"]) and not (capcode_hit or vehicle_hit):
+                return False
+        else:
+            if f["capcodes"] and not capcode_hit:
+                return False
+            if f["vehicles"] and not vehicle_hit:
+                return False
         if f["priorities"]:
-            priority = extract_priority(message.get("message", ""))
-            if not priority or priority not in f["priorities"]:
+            urgency = message_urgency(message)
+            if urgency is None or urgency not in f["priorities"]:
+                return False
+        if f["radius_km"]:
+            distance = message.get("distance_km")
+            if distance is None or distance > f["radius_km"]:
                 return False
         if f["include"] or f["exclude"]:
-            lower = str(message.get("message", "")).lower()
+            # Match both the readable text and the pager text ("BR woning").
+            lower = f"{message.get('message', '')} {message.get('pager_text', '')}".lower()
             if f["include"] and not any(x in lower for x in f["include"]):
                 return False
             if any(x in lower for x in f["exclude"]):
