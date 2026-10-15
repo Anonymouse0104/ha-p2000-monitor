@@ -20,9 +20,11 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .enrich import (
+    SERVICE_POLICE,
     capcode_details,
     distance_km,
     extract_vehicles,
+    is_police_alert,
     normalize_vehicle,
     parse_priority,
     to_float,
@@ -270,6 +272,13 @@ def normalize_api_message(item: dict[str, Any]) -> dict[str, Any] | None:
     priority, urgency = parse_priority(pager_text, item.get("prio1"))
     region_text = _as_text(item.get("regio_name") or item.get("region_name") or item.get("regio"))
     unit_regions = police_unit_regions(region_text)
+    details = capcode_details(item.get("capcodes"), normalize_capcode)
+    if service_id != SERVICE_POLICE and is_police_alert(capcodes, details):
+        # Misfiled police alert (e.g. a Limburg press alarm marked as fire
+        # brigade): use the police service and the real pager text instead of
+        # the generated "Brandweer met ... spoed naar ..." text.
+        service_id = SERVICE_POLICE
+        message = pager_text
     result = {
         "api_id": _as_text(item.get("id")),
         "message": message,
@@ -280,7 +289,7 @@ def normalize_api_message(item: dict[str, Any]) -> dict[str, Any] | None:
         "urgency": urgency,
         "grip": int(_as_text(item.get("grip")) or 0) if _as_text(item.get("grip")).isdigit() else 0,
         "vehicles": [{"id": v} for v in extract_vehicles(pager_text, service_id)],
-        "capcode_details": capcode_details(item.get("capcodes"), normalize_capcode),
+        "capcode_details": details,
         "street": _as_text(item.get("straat")),
         "postcode": _as_text(item.get("postcode")),
         "capcode": capcodes[0] if capcodes else "",

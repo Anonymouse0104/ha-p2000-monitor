@@ -16,8 +16,30 @@ _NOT_A_UNIT = re.compile(r"\b(?:rit|bon|ritnummer)\s*:?\s*\d+", re.IGNORECASE)
 _P_PRIORITY = re.compile(r"\b(?:P|PRIO)\s*([1-5])\b", re.IGNORECASE)
 _AMBULANCE_PRIORITY = re.compile(r"^\s*(A\s*[12]|B\s*[12]?)\b", re.IGNORECASE)
 
+SERVICE_POLICE = "1"
 SERVICE_FIRE = "2"
 SERVICE_AMBULANCE = "3"
+
+# Capcodes that only the police uses but that AlarmeringDroid files under
+# another service (and then generates a fire brigade text for). P2Kflex labels
+# them by capcode, e.g. 1033216 = "Politie Eenheid Limburg (Persalarm District
+# Noord en Midden)". Extend when other regions show the same.
+POLICE_CAPCODES = {
+    "1033215",  # Politie Eenheid Limburg, persalarm District Parkstad/Zuid-West
+    "1033216",  # Politie Eenheid Limburg, persalarm District Noord en Midden
+}
+_POLICE_DESCRIPTION = re.compile(r"\b(politie|persinfo|persalarm)\b", re.IGNORECASE)
+
+
+def is_police_alert(capcodes: list[str], details: list[dict[str, str]]) -> bool:
+    """True when every capcode of an alert belongs to the police."""
+    if not capcodes:
+        return False
+    descriptions = {d["capcode"]: d.get("description", "") for d in details}
+    return all(
+        code in POLICE_CAPCODES or _POLICE_DESCRIPTION.search(descriptions.get(code, ""))
+        for code in capcodes
+    )
 
 
 def parse_priority(pager_text: str, prio1: Any = None) -> tuple[str | None, int | None]:
