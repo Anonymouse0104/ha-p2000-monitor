@@ -9,12 +9,16 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 import logging
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState, ConfigSubentry
+from homeassistant.loader import async_get_integration
 from homeassistant.const import CONF_NAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -61,7 +65,8 @@ from .coordinator import REGIONS, P2000FeedCoordinator, P2000FilterProcessor, st
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.BINARY_SENSOR, Platform.EVENT, Platform.SENSOR]
+CARD_URL = f"/{DOMAIN}/p2000-live-card.js"
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.EVENT, Platform.GEO_LOCATION, Platform.SENSOR]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 TEST_INCIDENT_SCHEMA = vol.Schema(
@@ -112,7 +117,21 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.services.async_register(
         DOMAIN, SERVICE_INJECT_TEST_INCIDENT, handle_test_incident, schema=TEST_INCIDENT_SCHEMA
     )
+    await _async_register_card(hass)
     return True
+
+
+async def _async_register_card(hass: HomeAssistant) -> None:
+    """Serve the P2000 live card and load it in the frontend, no manual resource needed."""
+    if hass.http is None:
+        return
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(CARD_URL, str(Path(__file__).parent / "frontend" / "p2000-live-card.js"), True)]
+    )
+    if "frontend" in hass.config.components:
+        version = (await async_get_integration(hass, DOMAIN)).version
+        # The version query busts the browser cache after an update.
+        add_extra_js_url(hass, f"{CARD_URL}?v={version}")
 
 
 async def _async_get_feed(hass: HomeAssistant) -> P2000FeedCoordinator:

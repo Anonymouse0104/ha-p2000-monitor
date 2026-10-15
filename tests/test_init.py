@@ -239,6 +239,22 @@ async def test_watch_flow_requires_a_unit(hass, aioclient_mock):
     assert hass.states.get("event.echt_alarm") is not None
 
 
+async def test_recent_alerts_on_the_map(hass, aioclient_mock, freezer):
+    e = hub(sensor("Limburg", regions=["21"]), watch("Echt", capcodes=["1"]))
+    await setup(hass, aioclient_mock, e, payload=feed(
+        item(2, "Brandweer naar Echt", ["1"], lat="51.1028", lon="5.8662"),
+        item(1, "Zonder locatie", ["1"]),
+    ))
+    geo = [s for s in hass.states.async_all("geo_location") if s.attributes.get("source") == "p2000_monitor"]
+    assert len(geo) == 1
+    assert geo[0].attributes["latitude"] == 51.1028
+    assert geo[0].attributes["message"] == "Brandweer naar Echt"
+    # Older than an hour: off the map at the next update.
+    freezer.tick(timedelta(minutes=61))
+    await poll(hass, aioclient_mock, feed(item(3, "Nieuw zonder locatie", ["1"])))
+    assert not [s for s in hass.states.async_all("geo_location") if s.attributes.get("source") == "p2000_monitor"]
+
+
 async def test_failure_backoff_and_availability(hass, aioclient_mock):
     e = hub(sensor("A"))
     await setup(hass, aioclient_mock, e)
