@@ -1,0 +1,43 @@
+# Example P2000 dashboard.
+#
+# Settings → Dashboards → Add dashboard → "New dashboard from scratch", open it,
+# then ⋮ → Edit dashboard → ⋮ → Raw configuration editor, and paste this.
+# Replace the entity ids with your own P2000 sensors and followed units.
+title: P2000
+views:
+  - title: Live
+    path: live
+    icon: mdi:alarm-light
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: custom:p2000-live-card
+            title: P2000 live
+            entities:
+              - sensor.p2000_monitor
+            display: both
+            max_items: 40
+            grid_options:
+              columns: full
+      - type: grid
+        cards:
+          - type: map
+            title: Meldingen afgelopen uur
+            geo_location_sources:
+              - p2000_monitor
+            entities:
+              - zone.home
+            default_zoom: 8
+            aspect_ratio: "1:1"
+            grid_options:
+              columns: full
+      - type: grid
+        cards:
+          - type: heading
+            heading: Gevolgde eenheden
+          - type: tile
+            entity: binary_sensor.kazerne_echt_actief
+          - type: tile
+            entity: event.kazerne_echt_alarm

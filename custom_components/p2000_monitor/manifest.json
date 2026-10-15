@@ -1,6 +1,7 @@
 {
   "domain": "p2000_monitor",
   "name": "P2000 Monitor",
+  "after_dependencies": ["frontend", "http"],
   "codeowners": ["@Anonymouse0104"],
   "config_flow": true,
   "documentation": "https://github.com/Anonymouse0104/ha-p2000-monitor",
