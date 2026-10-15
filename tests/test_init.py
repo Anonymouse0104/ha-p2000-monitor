@@ -1,4 +1,5 @@
 ﻿from datetime import timedelta
+import re
 
 import aiohttp
 from homeassistant.config_entries import SOURCE_RECONFIGURE, SOURCE_USER, ConfigEntryState
@@ -61,7 +62,12 @@ def by_name(entry, name):
     return entry.runtime_data[sub_id]
 
 
-async def setup(hass, aioclient_mock, *entries, payload=None):
+BACKFILL_URL = re.compile(r"/api2/find/%7B")
+
+
+async def setup(hass, aioclient_mock, *entries, payload=None, backfill=None):
+    # Startup backfill requests (filtered API) get an empty feed unless given.
+    aioclient_mock.get(BACKFILL_URL, json=backfill or feed())
     aioclient_mock.get(API_URL, json=payload or feed(item(100, "P 1 BR woning Echt", ["1005258"])))
     for e in entries:
         e.add_to_hass(hass)
@@ -73,6 +79,7 @@ async def setup(hass, aioclient_mock, *entries, payload=None):
 
 async def poll(hass, aioclient_mock, payload, exc=None):
     aioclient_mock.clear_requests()
+    aioclient_mock.get(BACKFILL_URL, json=feed())
     if exc:
         aioclient_mock.get(API_URL, exc=exc)
     else:
@@ -84,7 +91,8 @@ async def poll(hass, aioclient_mock, payload, exc=None):
 async def test_one_request_for_all_sensors(hass: HomeAssistant, aioclient_mock):
     e = hub(sensor("A"), sensor("B", regions=["15"]), sensor("C", all_services=True))
     await setup(hass, aioclient_mock, e)
-    assert aioclient_mock.call_count == 1
+    feed_calls = [c for c in aioclient_mock.mock_calls if "%7B" not in str(c[1])]
+    assert len(feed_calls) == 1  # one live poll for all sensors (B also backfills once)
     assert len(e.runtime_data) == 3
     assert {hass.states.get(x) is not None for x in ("sensor.a", "sensor.b", "sensor.c")} == {True}
     ent_reg = er.async_get(hass)
@@ -253,6 +261,36 @@ async def test_recent_alerts_on_the_map(hass, aioclient_mock, freezer):
     freezer.tick(timedelta(minutes=61))
     await poll(hass, aioclient_mock, feed(item(3, "Nieuw zonder locatie", ["1"])))
     assert not [s for s in hass.states.async_all("geo_location") if s.attributes.get("source") == "p2000_monitor"]
+
+
+async def test_startup_backfills_latest_matching_alerts(hass, aioclient_mock):
+    """A sensor for a quiet region gets its last alerts at startup, without events."""
+    match = async_capture_events(hass, "p2000_monitor_filter_match")
+    old = feed(
+        item(26204335, "Brandweer met gepaste spoed naar Holzstraat, Kerkrade", ["1005110"]),
+        item(26203473, "Brandweer met gepaste spoed naar Bartokring, Landgraaf", ["1005110"]),
+        item(26203000, "Ambulance elders", ["1"], dienstid="3"),
+    )
+    e = hub(sensor("Brandweer ZL", regions=["21"], disciplines=["2"]), sensor("Alles", all_services=True))
+    await setup(hass, aioclient_mock, e, payload=feed(item(1, "Amsterdam", ["9"], regioid="1")), backfill=old)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert hass.states.get("sensor.brandweer_zl").state == "Brandweer met gepaste spoed naar Holzstraat, Kerkrade"
+    assert [m["api_id"] for m in by_name(e, "Brandweer ZL").data["messages"]] == ["26204335", "26203473"]
+    assert not match
+    # The API was asked with the sensor's own filter; "all services" needs no backfill.
+    backfill_calls = [str(c[1]) for c in aioclient_mock.mock_calls if "%7B" in str(c[1])]
+    assert len(backfill_calls) == 1 and "regios" in backfill_calls[0] and "diensten" in backfill_calls[0]
+
+
+async def test_police_units_cover_all_their_regions(hass, aioclient_mock):
+    e = hub(sensor("LN", regions=["15"]), sensor("Utrecht", regions=["18"]))
+    await setup(hass, aioclient_mock, e, payload=feed(item(1, "x", ["9"], regioid="1")))
+    await poll(hass, aioclient_mock, feed(
+        item(2, "Aanrijding letsel N297 Born", ["1033215"], dienstid="1", regioid="21", regio="Eenheid Limburg"),
+    ))
+    assert [m["api_id"] for m in by_name(e, "LN").data["messages"]] == ["2"]
+    assert by_name(e, "Utrecht").data["messages"] == []
+    assert hass.states.get("sensor.ln").attributes["regio_name"] == "Eenheid Limburg"
 
 
 async def test_failure_backoff_and_availability(hass, aioclient_mock):
