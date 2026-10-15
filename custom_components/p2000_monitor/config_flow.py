@@ -20,6 +20,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_ACTIVE_MINUTES,
     CONF_ALL_SERVICES,
     CONF_BRANDBASE,
     CONF_CAPCODES,
@@ -32,12 +33,14 @@ from .const import (
     CONF_RADIUS,
     CONF_REGIONS,
     CONF_VEHICLES,
+    DEFAULT_ACTIVE_MINUTES,
     DEFAULT_INCIDENT_WINDOW,
     DISPLAY_PAGER,
     DISPLAY_TEXT,
     DOMAIN,
     HUB_TITLE,
     SUBENTRY_SENSOR,
+    SUBENTRY_WATCH,
 )
 from .coordinator import REGIONS
 from .enrich import normalize_vehicle
@@ -144,7 +147,7 @@ class P2000ConfigFlow(ConfigFlow, domain=DOMAIN):
     @classmethod
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
-        return {SUBENTRY_SENSOR: P2000SensorSubentryFlow}
+        return {SUBENTRY_SENSOR: P2000SensorSubentryFlow, SUBENTRY_WATCH: P2000WatchSubentryFlow}
 
     @staticmethod
     @callback
@@ -166,15 +169,77 @@ class P2000OptionsFlow(OptionsFlow):
         )
 
 
-class P2000SensorSubentryFlow(ConfigSubentryFlow):
-    """Add or change one P2000 sensor."""
-
+class _NamedSubentryFlow(ConfigSubentryFlow):
     def _name_taken(self, name: str, own_subentry_id: str | None = None) -> bool:
         return any(
             sub.title.strip().lower() == name.lower()
             for sub_id, sub in self._get_entry().subentries.items()
             if sub_id != own_subentry_id
         )
+
+
+def _watch_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
+    defaults = dict(defaults or {})
+    for key in (CONF_CAPCODES, CONF_VEHICLES):
+        if isinstance(defaults.get(key), list):
+            defaults[key] = ", ".join(defaults[key])
+    return vol.Schema({
+        vol.Required("name", default=defaults.get("name", "")): str,
+        vol.Optional(CONF_CAPCODES, default=defaults.get(CONF_CAPCODES, "")): str,
+        vol.Optional(CONF_VEHICLES, default=defaults.get(CONF_VEHICLES, "")): str,
+        vol.Optional(CONF_REGIONS, default=defaults.get(CONF_REGIONS, [])): REGION_SELECTOR,
+        vol.Optional(
+            CONF_ACTIVE_MINUTES, default=defaults.get(CONF_ACTIVE_MINUTES, DEFAULT_ACTIVE_MINUTES)
+        ): vol.All(vol.Coerce(int), vol.Range(min=1, max=240)),
+    })
+
+
+def _normalise_watch(data: dict[str, Any]) -> dict[str, Any]:
+    split = lambda value: [x.strip() for x in str(value or "").replace(";", ",").split(",") if x.strip()]
+    return {
+        "name": str(data["name"]).strip(),
+        CONF_CAPCODES: split(data.get(CONF_CAPCODES)),
+        CONF_VEHICLES: [normalize_vehicle(x) for x in split(data.get(CONF_VEHICLES))],
+        CONF_REGIONS: [str(x) for x in data.get(CONF_REGIONS, [])],
+        CONF_ACTIVE_MINUTES: int(data.get(CONF_ACTIVE_MINUTES, DEFAULT_ACTIVE_MINUTES)),
+    }
+
+
+class P2000WatchSubentryFlow(_NamedSubentryFlow):
+    """Follow capcodes and/or vehicles: alarm event + active sensor."""
+
+    def _validate(self, data: dict[str, Any], own_subentry_id: str | None = None) -> dict[str, str]:
+        if not data["name"]:
+            return {"name": "name_required"}
+        if self._name_taken(data["name"], own_subentry_id):
+            return {"name": "name_exists"}
+        if not data[CONF_CAPCODES] and not data[CONF_VEHICLES]:
+            return {"base": "no_units"}
+        return {}
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data = _normalise_watch(user_input)
+            if not (errors := self._validate(data)):
+                return self.async_create_entry(title=data["name"], data=data)
+        return self.async_show_form(step_id="user", data_schema=_watch_schema(user_input), errors=errors)
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        subentry = self._get_reconfigure_subentry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data = _normalise_watch(user_input)
+            if not (errors := self._validate(data, subentry.subentry_id)):
+                return self.async_update_and_abort(
+                    self._get_entry(), subentry, title=data["name"], data={**subentry.data, **data}
+                )
+        defaults = user_input or {"name": subentry.title, **subentry.data}
+        return self.async_show_form(step_id="reconfigure", data_schema=_watch_schema(defaults), errors=errors)
+
+
+class P2000SensorSubentryFlow(_NamedSubentryFlow):
+    """Add or change one P2000 sensor."""
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         errors: dict[str, str] = {}

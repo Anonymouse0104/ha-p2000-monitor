@@ -54,13 +54,14 @@ from .const import (
     SERVICE_INJECT_TEST_INCIDENT,
     STORAGE_VERSION,
     SUBENTRY_SENSOR,
+    SUBENTRY_WATCH,
 )
 from .brandbase import BrandbaseVehicles
 from .coordinator import REGIONS, P2000FeedCoordinator, P2000FilterProcessor, storage_key
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.EVENT, Platform.SENSOR]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 TEST_INCIDENT_SCHEMA = vol.Schema(
@@ -188,19 +189,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: P2000ConfigEntry) -> boo
         entry.async_on_unload(vehicle_db.async_stop)
     processors: dict[str, P2000FilterProcessor] = {}
     for subentry_id, subentry in entry.subentries.items():
-        if subentry.subentry_type != SUBENTRY_SENSOR:
+        if subentry.subentry_type == SUBENTRY_SENSOR:
+            settings = sensor_settings(subentry.data, subentry.title)
+            processor = P2000FilterProcessor(
+                hass,
+                feed,
+                subentry_storage_id(subentry),
+                entry_id=entry.entry_id,
+                subentry_id=subentry_id,
+                incident_window=settings[CONF_INCIDENT_WINDOW],
+                api_filter=_api_filter(settings),
+                vehicle_db=vehicle_db,
+            )
+        elif subentry.subentry_type == SUBENTRY_WATCH:
+            processor = P2000FilterProcessor(
+                hass,
+                feed,
+                subentry_storage_id(subentry),
+                entry_id=entry.entry_id,
+                subentry_id=subentry_id,
+                api_filter={
+                    "capcodes": subentry.data.get(CONF_CAPCODES, []),
+                    "vehicles": subentry.data.get(CONF_VEHICLES, []),
+                    "regios": subentry.data.get(CONF_REGIONS, []),
+                },
+                match_any_unit=True,
+                vehicle_db=vehicle_db,
+            )
+        else:
             continue
-        settings = sensor_settings(subentry.data, subentry.title)
-        processor = P2000FilterProcessor(
-            hass,
-            feed,
-            subentry_storage_id(subentry),
-            entry_id=entry.entry_id,
-            subentry_id=subentry_id,
-            incident_window=settings[CONF_INCIDENT_WINDOW],
-            api_filter=_api_filter(settings),
-            vehicle_db=vehicle_db,
-        )
         await processor.async_start()
         entry.async_on_unload(processor.async_stop)
         processors[subentry_id] = processor

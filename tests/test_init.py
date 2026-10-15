@@ -1,4 +1,4 @@
-from datetime import timedelta
+﻿from datetime import timedelta
 
 import aiohttp
 from homeassistant.config_entries import SOURCE_RECONFIGURE, SOURCE_USER, ConfigEntryState
@@ -9,6 +9,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_capture_events,
+    async_fire_time_changed,
 )
 
 from custom_components.p2000_monitor.const import DATA_FEED, DOMAIN
@@ -185,6 +186,57 @@ async def test_options_switch_brandbase_off(hass, aioclient_mock):
     assert e.options["brandbase"] is False
     assert e.state is ConfigEntryState.LOADED
     assert all(p.vehicle_db is None for p in e.runtime_data.values())
+
+
+def watch(name, **data):
+    return {"subentry_type": "watch", "title": name, "unique_id": None,
+            "data": {"name": name, "capcodes": [], "vehicles": [], "regions": [], "active_minutes": 15, **data}}
+
+
+async def test_watch_fires_alarm_event_and_active_sensor(hass, aioclient_mock, freezer):
+    e = hub(watch("Kazerne Echt", capcodes=["1005258"], vehicles=["24-3231"]))
+    await setup(hass, aioclient_mock, e, payload=feed(item(1, "x", ["9"])))
+    assert hass.states.get("binary_sensor.kazerne_echt_active").state == "off"
+    event_state = hass.states.get("event.kazerne_echt_alarm")
+    assert event_state.state == "unknown"
+
+    await poll(hass, aioclient_mock, feed(
+        item(3, "Brandweer naar Echt", ["7777"], melding="P 1 BR woning Echt 243231"),  # vehicle only
+        item(2, "Ambulance Rotterdam", ["1"], regioid="10", dienstid="3"),
+        item(1, "x", ["9"]),
+    ))
+    event_state = hass.states.get("event.kazerne_echt_alarm")
+    assert event_state.attributes["event_type"] == "alarm"
+    assert event_state.attributes["vehicles"] == ["24-3231"]
+    assert event_state.attributes["pager_text"] == "P 1 BR woning Echt 243231"
+    assert hass.states.get("binary_sensor.kazerne_echt_active").state == "on"
+    fired_at = event_state.state
+
+    # Same feed again: no new alarm.
+    await poll(hass, aioclient_mock, feed(item(3, "Brandweer naar Echt", ["7777"], melding="P 1 BR woning Echt 243231")))
+    assert hass.states.get("event.kazerne_echt_alarm").state == fired_at
+
+    # Active turns off after the window.
+    freezer.tick(timedelta(minutes=16))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.kazerne_echt_active").state == "off"
+
+
+async def test_watch_flow_requires_a_unit(hass, aioclient_mock):
+    e = hub(sensor("A"))
+    await setup(hass, aioclient_mock, e)
+    flow = await hass.config_entries.subentries.async_init((e.entry_id, "watch"), context={"source": SOURCE_USER})
+    result = await hass.config_entries.subentries.async_configure(flow["flow_id"], {"name": "Leeg"})
+    assert result["errors"] == {"base": "no_units"}
+    result = await hass.config_entries.subentries.async_configure(
+        flow["flow_id"], {"name": "Echt", "capcodes": "1005258", "vehicles": "243231"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    sub = next(s for s in e.subentries.values() if s.subentry_type == "watch")
+    assert sub.data["vehicles"] == ["24-3231"]
+    assert hass.states.get("event.echt_alarm") is not None
 
 
 async def test_failure_backoff_and_availability(hass, aioclient_mock):

@@ -407,6 +407,8 @@ class P2000FilterProcessor:
         self.subentry_id = subentry_id
         # Set by the sensor once it is added, so events can name it.
         self.entity_id: str | None = None
+        # When this filter last accepted a new alert (drives "active" sensors).
+        self.last_match_time: datetime | None = None
         self.exclude_capcodes = {normalize_capcode(x) for x in (exclude_capcodes or []) if normalize_capcode(x)}
         self.incident_window = incident_window
         self.api_filter = {k: v for k, v in (api_filter or {}).items() if v not in (None, "", [], {})}
@@ -542,6 +544,8 @@ class P2000FilterProcessor:
     @callback
     def _fire_events(self, new_messages: list[dict[str, Any]], incident_changes: list[dict[str, Any]]) -> None:
         """Fire one filter-match event per accepted new message, plus incident events."""
+        if new_messages:
+            self.last_match_time = dt_util.utcnow()
         base = {"entry_id": self.entry_id, "subentry_id": self.subentry_id, "sensor": self.entity_id}
         for message in reversed(new_messages):  # oldest first
             self.hass.bus.async_fire(
