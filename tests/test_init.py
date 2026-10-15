@@ -40,9 +40,10 @@ def sensor(name, **data):
             "data": {"name": name, **SENSOR_DEFAULTS, **data}}
 
 
-def hub(*sensors):
+def hub(*sensors, brandbase=False):
+    # Brandbase off by default so tests never reach out; test_brandbase covers it.
     return MockConfigEntry(domain=DOMAIN, version=2, title="P2000 Monitor", unique_id=DOMAIN,
-                           data={}, subentries_data=list(sensors))
+                           data={}, options={"brandbase": brandbase}, subentries_data=list(sensors))
 
 
 def legacy_entry(name, **data):
@@ -152,6 +153,38 @@ async def test_phase_a_filters_and_display(hass, aioclient_mock):
     assert ids("Dichtbij") == ["102"]  # 0.1 km; Echt is ~31 km, 101 has no location
     assert hass.states.get("sensor.pager").state == "P 1 BR woning Echt 240733"  # newest, as pager text
     assert hass.states.get("sensor.spoed").attributes["vehicles"] == [{"id": "24-0733"}]
+
+
+async def test_brandbase_names_vehicles_of_accepted_alerts(hass, aioclient_mock):
+    from unittest.mock import patch
+
+    from custom_components.p2000_monitor import brandbase
+    from tests.test_brandbase import INDEX, REGION
+
+    aioclient_mock.get(brandbase.INDEX_URL, text=INDEX)
+    aioclient_mock.get("https://brandbase.hetbrandweerforum.nl/voertuigen/regio/24-brandweer-zuid-limburg/", text=REGION)
+    e = hub(sensor("Limburg", regions=["21"]), brandbase=True)
+
+    async def no_sleep(_seconds):
+        return None
+
+    with patch.object(brandbase, "_sleep", no_sleep):
+        await setup(hass, aioclient_mock, e, payload=feed(item(100, "P 1 BR woning Echt 240733", ["1"])))
+        await hass.async_block_till_done(wait_background_tasks=True)
+    state = hass.states.get("sensor.limburg")
+    assert state.attributes["vehicles"][0]["type"] == "Tankautospuit"
+    assert state.attributes["vehicles"][0]["station"] == "Regionaal"
+
+
+async def test_options_switch_brandbase_off(hass, aioclient_mock):
+    e = hub(sensor("A"), brandbase=True)
+    await setup(hass, aioclient_mock, e, payload=feed(item(1, "A1 x", ["1"], dienstid="3")))
+    result = await hass.config_entries.options.async_init(e.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"brandbase": False})
+    await hass.async_block_till_done()
+    assert e.options["brandbase"] is False
+    assert e.state is ConfigEntryState.LOADED
+    assert all(p.vehicle_db is None for p in e.runtime_data.values())
 
 
 async def test_failure_backoff_and_availability(hass, aioclient_mock):

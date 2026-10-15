@@ -13,6 +13,7 @@ from homeassistant.config_entries import (
     ConfigFlow,
     ConfigFlowResult,
     ConfigSubentryFlow,
+    OptionsFlow,
     SubentryFlowResult,
 )
 from homeassistant.core import callback
@@ -20,6 +21,7 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_ALL_SERVICES,
+    CONF_BRANDBASE,
     CONF_CAPCODES,
     CONF_DISCIPLINES,
     CONF_DISPLAY,
@@ -143,6 +145,25 @@ class P2000ConfigFlow(ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
         return {SUBENTRY_SENSOR: P2000SensorSubentryFlow}
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        return P2000OptionsFlow()
+
+
+class P2000OptionsFlow(OptionsFlow):
+    """Integration-wide options."""
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Optional(CONF_BRANDBASE, default=self.config_entry.options.get(CONF_BRANDBASE, True)): bool,
+            }),
+        )
 
 
 class P2000SensorSubentryFlow(ConfigSubentryFlow):

@@ -113,5 +113,18 @@
         "pager": "Pagertekst (P 1 BR woning …)"
       }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "P2000 Monitor-opties",
+        "data": {
+          "brandbase": "Voertuignamen ophalen van Brandbase"
+        },
+        "data_description": {
+          "brandbase": "Zoekt bij brandweermeldingen het type en de post van de gealarmeerde voertuigen op (bijvoorbeeld 24-0733 → Tankautospuit, Regionaal) via brandbase.hetbrandweerforum.nl. Alleen regio's waarvan je meldingen ontvangt, hooguit één keer per week."
+        }
+      }
+    }
   }
 }

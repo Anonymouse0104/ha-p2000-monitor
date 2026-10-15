@@ -19,6 +19,8 @@ CONF_RADIUS = "radius_km"
 CONF_DISPLAY = "display"
 DISPLAY_TEXT = "text"
 DISPLAY_PAGER = "pager"
+# Integration option: look up fire vehicle names on Brandbase (default on).
+CONF_BRANDBASE = "brandbase"
 
 # The single config entry and its per-sensor subentries.
 HUB_TITLE = "P2000 Monitor"
