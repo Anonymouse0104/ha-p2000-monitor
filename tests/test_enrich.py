@@ -37,6 +37,26 @@ def test_capcode_details_and_distance():
     assert round(distance_km(50.8514, 5.6909, 51.1028, 5.8662)) == 31
 
 
+def test_misfiled_police_press_alarm_becomes_police():
+    # Real feed item 26204478: AlarmeringDroid files it as fire brigade with a
+    # generated fire text; capcode 1033216 is a Limburg police press alarm.
+    message = normalize_api_message({
+        "id": "26204478", "melding": "Aanrijding letsel N279 - Schaapsbrug Heibloem",
+        "tekstmelding": "Brandweer met gepaste spoed naar Schaapsbrug, Heibloem, voor een hulpverlening",
+        "dienstid": "2", "regioid": "15", "regio": "Limburg-Noord", "datum": "15-10", "tijd": "10:32",
+        "capcodes": [{"capcode": "1033216", "omschrijving": "Onbekend"}],
+    })
+    assert message["dienstid"] == "1" and message["discipline"] == "Politiediensten"
+    assert message["message"] == "Aanrijding letsel N279 - Schaapsbrug Heibloem"
+    # A real fire alert with a mixed capcode list stays fire brigade.
+    fire = normalize_api_message({
+        "id": "1", "melding": "P 2 BLB-01 Stank Holzstraat Kerkrade 242131", "tekstmelding": "Brandweer naar Kerkrade",
+        "dienstid": "2", "regioid": "21", "datum": "15-10", "tijd": "10:03",
+        "capcodes": [{"capcode": "1005110", "omschrijving": "Bevelvoerders / Kerkrade"}, {"capcode": "1033215", "omschrijving": "Persinfo"}],
+    })
+    assert fire["dienstid"] == "2" and fire["vehicles"] == [{"id": "24-2131"}]
+
+
 def test_normalize_api_message_enriches():
     message = normalize_api_message({
         "id": "26202451", "melding": "A1 AMBU 17103 Peperdonk 3206CB Spijkenisse SPIJKN bon 159921",
