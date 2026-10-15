@@ -25,6 +25,12 @@ CONF_BRANDBASE = "brandbase"
 # The single config entry and its per-sensor subentries.
 HUB_TITLE = "P2000 Monitor"
 SUBENTRY_SENSOR = "sensor"
+# Follows capcodes and/or vehicles: an event entity per alarm plus an
+# "active" binary sensor, for automations without YAML.
+SUBENTRY_WATCH = "watch"
+CONF_ACTIVE_MINUTES = "active_minutes"
+DEFAULT_ACTIVE_MINUTES = 15
+EVENT_TYPE_ALARM = "alarm"
 # Set on sensors migrated from the old one-entry-per-sensor setup, so they keep
 # their entity unique_id and stored history.
 CONF_ENTITY_KEY = "entity_key"

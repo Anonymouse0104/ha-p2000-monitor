@@ -104,6 +104,53 @@
       "error": {
         "name_exists": "Er bestaat al een sensor met deze naam."
       }
+    },
+    "watch": {
+      "entry_type": "Capcode/voertuig",
+      "initiate_flow": {
+        "user": "Capcode of voertuig volgen"
+      },
+      "step": {
+        "user": {
+          "title": "Capcode of voertuig volgen",
+          "description": "Maakt een apparaat met een 'Alarm'-gebeurtenis voor automations en een 'Actief'-sensor. Een alarm volgt zodra één van de capcodes of voertuigen wordt gealarmeerd.",
+          "data": {
+            "name": "Naam",
+            "capcodes": "Capcodes",
+            "vehicles": "Voertuigen (roepnummers)",
+            "regions": "Alleen in deze veiligheidsregio's",
+            "active_minutes": "Actief na alarm (minuten)"
+          },
+          "data_description": {
+            "capcodes": "Komma-gescheiden, bijvoorbeeld 1005258, 1005264.",
+            "vehicles": "Komma-gescheiden roepnummers, bijvoorbeeld 24-0733, 24-3231.",
+            "regions": "Optioneel: leeg = heel Nederland.",
+            "active_minutes": "Hoe lang de 'Actief'-sensor aan blijft na het laatste alarm."
+          }
+        },
+        "reconfigure": {
+          "title": "Volgen wijzigen",
+          "description": "Pas de capcodes en voertuigen aan die je volgt.",
+          "data": {
+            "name": "Naam",
+            "capcodes": "Capcodes",
+            "vehicles": "Voertuigen (roepnummers)",
+            "regions": "Alleen in deze veiligheidsregio's",
+            "active_minutes": "Actief na alarm (minuten)"
+          },
+          "data_description": {
+            "capcodes": "Komma-gescheiden, bijvoorbeeld 1005258, 1005264.",
+            "vehicles": "Komma-gescheiden roepnummers, bijvoorbeeld 24-0733, 24-3231.",
+            "regions": "Optioneel: leeg = heel Nederland.",
+            "active_minutes": "Hoe lang de 'Actief'-sensor aan blijft na het laatste alarm."
+          }
+        }
+      },
+      "error": {
+        "name_exists": "Er bestaat al een sensor of volgregel met deze naam.",
+        "name_required": "Geef een naam op.",
+        "no_units": "Vul minstens één capcode of voertuig in."
+      }
     }
   },
   "selector": {
@@ -124,6 +171,25 @@
         "data_description": {
           "brandbase": "Zoekt bij brandweermeldingen het type en de post van de gealarmeerde voertuigen op (bijvoorbeeld 24-0733 → Tankautospuit, Regionaal) via brandbase.hetbrandweerforum.nl. Alleen regio's waarvan je meldingen ontvangt, hooguit één keer per week."
         }
+      }
+    }
+  },
+  "entity": {
+    "event": {
+      "alarm": {
+        "name": "Alarm",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "alarm": "Alarm"
+            }
+          }
+        }
+      }
+    },
+    "binary_sensor": {
+      "active": {
+        "name": "Actief"
       }
     }
   }

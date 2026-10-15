@@ -104,6 +104,53 @@
       "error": {
         "name_exists": "A sensor with this name already exists."
       }
+    },
+    "watch": {
+      "entry_type": "Capcode/vehicle",
+      "initiate_flow": {
+        "user": "Follow capcode or vehicle"
+      },
+      "step": {
+        "user": {
+          "title": "Follow a capcode or vehicle",
+          "description": "Creates a device with an 'Alarm' event for automations and an 'Active' sensor. It fires as soon as any of the capcodes or vehicles is alerted.",
+          "data": {
+            "name": "Name",
+            "capcodes": "Capcodes",
+            "vehicles": "Vehicles (call signs)",
+            "regions": "Only in these safety regions",
+            "active_minutes": "Active after alarm (minutes)"
+          },
+          "data_description": {
+            "capcodes": "Comma separated, for example 1005258, 1005264.",
+            "vehicles": "Comma separated call signs, for example 24-0733, 24-3231.",
+            "regions": "Optional: empty = all of the Netherlands.",
+            "active_minutes": "How long the 'Active' sensor stays on after the last alarm."
+          }
+        },
+        "reconfigure": {
+          "title": "Change followed units",
+          "description": "Change the capcodes and vehicles you follow.",
+          "data": {
+            "name": "Name",
+            "capcodes": "Capcodes",
+            "vehicles": "Vehicles (call signs)",
+            "regions": "Only in these safety regions",
+            "active_minutes": "Active after alarm (minutes)"
+          },
+          "data_description": {
+            "capcodes": "Comma separated, for example 1005258, 1005264.",
+            "vehicles": "Comma separated call signs, for example 24-0733, 24-3231.",
+            "regions": "Optional: empty = all of the Netherlands.",
+            "active_minutes": "How long the 'Active' sensor stays on after the last alarm."
+          }
+        }
+      },
+      "error": {
+        "name_exists": "A sensor or follow rule with this name already exists.",
+        "name_required": "Enter a name.",
+        "no_units": "Enter at least one capcode or vehicle."
+      }
     }
   },
   "selector": {
@@ -124,6 +171,25 @@
         "data_description": {
           "brandbase": "For fire brigade alerts, looks up the type and post of the alerted vehicles (for example 24-0733 → Tankautospuit, Regionaal) on brandbase.hetbrandweerforum.nl. Only regions you receive alerts for, at most once a week."
         }
+      }
+    }
+  },
+  "entity": {
+    "event": {
+      "alarm": {
+        "name": "Alarm",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "alarm": "Alarm"
+            }
+          }
+        }
+      }
+    },
+    "binary_sensor": {
+      "active": {
+        "name": "Active"
       }
     }
   }

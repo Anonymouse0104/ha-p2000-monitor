@@ -1,0 +1,59 @@
+blueprint:
+  name: P2000 alarm melden
+  description: >
+    Stuur een pushbericht naar je telefoon zodra een gevolgde capcode of
+    voertuig van P2000 Monitor wordt gealarmeerd. Maak eerst in de integratie
+    een regel aan via "Capcode of voertuig volgen".
+  domain: automation
+  source_url: https://github.com/Anonymouse0104/ha-p2000-monitor/blob/main/blueprints/automation/p2000_monitor/p2000_alarm_notify.yaml
+  input:
+    alarm_entity:
+      name: Alarm
+      description: De 'Alarm'-entiteit van een volgregel.
+      selector:
+        entity:
+          filter:
+            - integration: p2000_monitor
+              domain: event
+    notify_device:
+      name: Telefoon
+      description: Apparaat met de Home Assistant-app.
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+    use_pager_text:
+      name: Pagertekst gebruiken
+      description: Toon de originele pagertekst (P 1 BR woning …) in plaats van de meldingtekst.
+      default: false
+      selector:
+        boolean: {}
+
+mode: queued
+max: 10
+
+triggers:
+  - trigger: state
+    entity_id: !input alarm_entity
+
+conditions:
+  # Skip restoring the entity after a restart and unknown/unavailable states.
+  - condition: template
+    value_template: >
+      {{ trigger.from_state is not none
+         and trigger.from_state.state != 'unavailable'
+         and trigger.to_state.state not in ['unavailable', 'unknown'] }}
+
+variables:
+  use_pager_text: !input use_pager_text
+  alarm: "{{ trigger.to_state.attributes }}"
+
+actions:
+  - domain: mobile_app
+    type: notify
+    device_id: !input notify_device
+    title: >
+      {{ (alarm.priority ~ ' ') if alarm.priority else '' }}{{ alarm.discipline }} {{ alarm.city }}
+    message: >
+      {{ alarm.pager_text if use_pager_text else alarm.message }}
+      {%- if alarm.vehicles %} — {{ alarm.vehicles | join(', ') }}{% endif %}
