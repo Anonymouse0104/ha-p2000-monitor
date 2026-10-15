@@ -13,6 +13,12 @@ CONF_CAPCODES = "capcodes"
 CONF_INCLUDE_TEXT = "include_text"
 CONF_EXCLUDE_TEXT = "exclude_text"
 CONF_INCIDENT_WINDOW = "incident_window"
+CONF_VEHICLES = "vehicles"
+CONF_RADIUS = "radius_km"
+# Which text the sensor state shows: the readable text or the raw pager text.
+CONF_DISPLAY = "display"
+DISPLAY_TEXT = "text"
+DISPLAY_PAGER = "pager"
 
 # The single config entry and its per-sensor subentries.
 HUB_TITLE = "P2000 Monitor"

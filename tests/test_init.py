@@ -130,6 +130,30 @@ async def test_filters(hass, aioclient_mock):
     assert hass.states.get("sensor.inc").state == "P 2 BR buitenbrand Echt"
 
 
+async def test_phase_a_filters_and_display(hass, aioclient_mock):
+    hass.config.latitude, hass.config.longitude = 50.8514, 5.6909  # Maastricht
+    e = hub(
+        sensor("Pager", display="pager"),
+        sensor("Spoed", priorities=["P1"]),
+        sensor("Wagen", vehicles=["240733"]),
+        sensor("Dichtbij", radius_km=10),
+    )
+    await setup(hass, aioclient_mock, e, payload=feed(item(1, "x", ["9"], regioid="1")))
+    await poll(hass, aioclient_mock, feed(
+        item(103, "Brandweer met spoed naar Echt", ["1005264"], melding="P 1 BR woning Echt 240733",
+             lat="51.1028", lon="5.8662"),
+        item(102, "Ambulance met spoed naar Maastricht", ["1"], melding="A1 AMBU 24101 Maastricht",
+             dienstid="3", lat="50.85", lon="5.69"),
+        item(101, "P 3 BR container", ["2"]),
+    ))
+    ids = lambda name: [m["api_id"] for m in by_name(e, name).data["messages"]]
+    assert ids("Spoed") == ["103", "102"]  # P1 and ambulance A1
+    assert ids("Wagen") == ["103"]
+    assert ids("Dichtbij") == ["102"]  # 0.1 km; Echt is ~31 km, 101 has no location
+    assert hass.states.get("sensor.pager").state == "P 1 BR woning Echt 240733"  # newest, as pager text
+    assert hass.states.get("sensor.spoed").attributes["vehicles"] == [{"id": "24-0733"}]
+
+
 async def test_failure_backoff_and_availability(hass, aioclient_mock):
     e = hub(sensor("A"))
     await setup(hass, aioclient_mock, e)

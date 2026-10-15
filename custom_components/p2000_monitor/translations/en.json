@@ -13,14 +13,21 @@
           "capcodes": "Capcodes",
           "include_text": "Text must contain",
           "exclude_text": "Text must not contain",
-          "incident_window": "Incident grouping window (seconds)"
+          "incident_window": "Incident grouping window (seconds)",
+          "vehicles": "Vehicles (call signs)",
+          "radius_km": "Radius around home (km)",
+          "display": "Display"
         },
         "data_description": {
           "all_services": "Shows every P2000 alert in the Netherlands and ignores the region, service, priority and capcode filters. Text filters still apply.",
           "capcodes": "Separate multiple capcodes with a comma or semicolon. An alert matches if any of its capcodes matches.",
           "include_text": "Separate multiple terms with a comma or semicolon; an alert matches if it contains any of them.",
           "exclude_text": "Separate multiple terms with a comma or semicolon; an alert must contain none of them.",
-          "incident_window": "How long follow-up alerts are grouped into the same incident."
+          "incident_window": "How long follow-up alerts are grouped into the same incident.",
+          "vehicles": "Call signs from the pager text, for example 24-0733 or 240733. An alert matches if any of these vehicles is alerted.",
+          "radius_km": "Only alerts within this distance of your Home Assistant home location. 0 = off. Alerts without a location are dropped when this is set.",
+          "display": "What the sensor state shows: the readable alert text or the original pager text.",
+          "priorities": "P1 also matches ambulance A1, P2 matches A2 and P3 matches B."
         }
       }
     },
@@ -47,14 +54,21 @@
             "capcodes": "Capcodes",
             "include_text": "Text must contain",
             "exclude_text": "Text must not contain",
-            "incident_window": "Incident grouping window (seconds)"
+            "incident_window": "Incident grouping window (seconds)",
+            "vehicles": "Vehicles (call signs)",
+            "radius_km": "Radius around home (km)",
+            "display": "Display"
           },
           "data_description": {
             "all_services": "Shows every P2000 alert in the Netherlands and ignores the region, service, priority and capcode filters. Text filters still apply.",
             "capcodes": "Separate multiple capcodes with a comma or semicolon. An alert matches if any of its capcodes matches.",
             "include_text": "Separate multiple terms with a comma or semicolon; an alert matches if it contains any of them.",
             "exclude_text": "Separate multiple terms with a comma or semicolon; an alert must contain none of them.",
-            "incident_window": "How long follow-up alerts are grouped into the same incident."
+            "incident_window": "How long follow-up alerts are grouped into the same incident.",
+            "vehicles": "Call signs from the pager text, for example 24-0733 or 240733. An alert matches if any of these vehicles is alerted.",
+            "radius_km": "Only alerts within this distance of your Home Assistant home location. 0 = off. Alerts without a location are dropped when this is set.",
+            "display": "What the sensor state shows: the readable alert text or the original pager text.",
+            "priorities": "P1 also matches ambulance A1, P2 matches A2 and P3 matches B."
           }
         },
         "reconfigure": {
@@ -69,19 +83,34 @@
             "capcodes": "Capcodes",
             "include_text": "Text must contain",
             "exclude_text": "Text must not contain",
-            "incident_window": "Incident grouping window (seconds)"
+            "incident_window": "Incident grouping window (seconds)",
+            "vehicles": "Vehicles (call signs)",
+            "radius_km": "Radius around home (km)",
+            "display": "Display"
           },
           "data_description": {
             "all_services": "Shows every P2000 alert in the Netherlands and ignores the region, service, priority and capcode filters. Text filters still apply.",
             "capcodes": "Separate multiple capcodes with a comma or semicolon. An alert matches if any of its capcodes matches.",
             "include_text": "Separate multiple terms with a comma or semicolon; an alert matches if it contains any of them.",
             "exclude_text": "Separate multiple terms with a comma or semicolon; an alert must contain none of them.",
-            "incident_window": "How long follow-up alerts are grouped into the same incident."
+            "incident_window": "How long follow-up alerts are grouped into the same incident.",
+            "vehicles": "Call signs from the pager text, for example 24-0733 or 240733. An alert matches if any of these vehicles is alerted.",
+            "radius_km": "Only alerts within this distance of your Home Assistant home location. 0 = off. Alerts without a location are dropped when this is set.",
+            "display": "What the sensor state shows: the readable alert text or the original pager text.",
+            "priorities": "P1 also matches ambulance A1, P2 matches A2 and P3 matches B."
           }
         }
       },
       "error": {
         "name_exists": "A sensor with this name already exists."
+      }
+    }
+  },
+  "selector": {
+    "display": {
+      "options": {
+        "text": "Alert text (Brandweer met spoed naar …)",
+        "pager": "Pager text (P 1 BR woning …)"
       }
     }
   }

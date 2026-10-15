@@ -11,7 +11,16 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from . import sensor_settings
-from .const import AVAILABILITY_GRACE, CONF_ENTITY_KEY, MAX_FILTER_INCIDENT_HISTORY, MAX_HISTORY
+from .const import (
+    AVAILABILITY_GRACE,
+    CONF_DISPLAY,
+    CONF_ENTITY_KEY,
+    DISPLAY_PAGER,
+    DISPLAY_TEXT,
+    MAX_FILTER_INCIDENT_HISTORY,
+    MAX_HISTORY,
+    SUBENTRY_SENSOR,
+)
 
 # Home Assistant rejects states longer than 255 characters.
 MAX_STATE_LENGTH = 255
@@ -115,6 +124,8 @@ async def async_setup_entry(
     """Add one sensor per sensor subentry."""
     for subentry_id, processor in entry.runtime_data.items():
         subentry = entry.subentries[subentry_id]
+        if subentry.subentry_type != SUBENTRY_SENSOR:
+            continue
         # Migrated sensors keep the unique_id they had as a separate entry.
         entity_key = subentry.data.get(CONF_ENTITY_KEY, subentry_id)
         async_add_entities(
@@ -129,7 +140,7 @@ class P2000FilterSensor(SensorEntity):
     # drops all attributes with a warning on every state change). They stay
     # available live in the state machine for dashboards and templates.
     _unrecorded_attributes = frozenset(
-        {"capcodes", "incident", "incidenten", "incident_history", "meldingen"}
+        {"capcodes", "capcode_details", "incident", "incidenten", "incident_history", "meldingen", "vehicles"}
     )
 
     def __init__(self, processor: P2000FilterProcessor, config: dict[str, Any], entity_key: str) -> None:
@@ -187,14 +198,28 @@ class P2000FilterSensor(SensorEntity):
         messages = list(data.get("messages") or [])
         latest = messages[0] if messages else {}
         incidents = self._matching_incidents(messages)
-        state = latest.get("message") or "Geen meldingen"
+        display = self._config.get(CONF_DISPLAY, DISPLAY_TEXT)
+        if display == DISPLAY_PAGER:
+            state = latest.get("pager_text") or latest.get("message")
+        else:
+            state = latest.get("message")
+        state = state or "Geen meldingen"
         self._attr_native_value = state if len(state) <= MAX_STATE_LENGTH else state[: MAX_STATE_LENGTH - 1] + "…"
         self._attr_icon = self._icon_for(latest)
         self._attr_extra_state_attributes = {
             "source": latest.get("source", "alarmeringdroid"),
+            "display": display,
             "message": latest.get("message", ""),
             "melding": latest.get("melding", ""),
             "tekstmelding": latest.get("tekstmelding", ""),
+            "pager_text": latest.get("pager_text", latest.get("melding", "")),
+            "priority": latest.get("priority"),
+            "urgency": latest.get("urgency"),
+            "grip": latest.get("grip", 0),
+            "vehicles": latest.get("vehicles", []),
+            "capcode_details": latest.get("capcode_details", []),
+            "distance_km": latest.get("distance_km"),
+            "street": latest.get("street", ""),
             "published": latest.get("published", ""),
             "regio": latest.get("regio", ""),
             "regio_name": latest.get("regio_name", ""),

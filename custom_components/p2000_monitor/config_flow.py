@@ -22,23 +22,37 @@ from .const import (
     CONF_ALL_SERVICES,
     CONF_CAPCODES,
     CONF_DISCIPLINES,
+    CONF_DISPLAY,
     CONF_EXCLUDE_TEXT,
     CONF_INCIDENT_WINDOW,
     CONF_INCLUDE_TEXT,
     CONF_PRIORITIES,
+    CONF_RADIUS,
     CONF_REGIONS,
+    CONF_VEHICLES,
     DEFAULT_INCIDENT_WINDOW,
+    DISPLAY_PAGER,
+    DISPLAY_TEXT,
     DOMAIN,
     HUB_TITLE,
     SUBENTRY_SENSOR,
 )
 from .coordinator import REGIONS
+from .enrich import normalize_vehicle
 
 DISCIPLINES = {
     "1": "Politie", "2": "Brandweer", "3": "Ambulance", "4": "KNRM", "5": "Lifeliner", "7": "DARES",
 }
-PRIORITIES = ["P1", "P2", "P3", "P4", "P5"]
-TEXT_LIST_FIELDS = (CONF_CAPCODES, CONF_INCLUDE_TEXT, CONF_EXCLUDE_TEXT)
+# Ambulance A1/A2/B count as urgency 1/2/3, so they match P1/P2/P3.
+PRIORITIES = {"P1": "P1 / A1", "P2": "P2 / A2", "P3": "P3 / B", "P4": "P4", "P5": "P5"}
+TEXT_LIST_FIELDS = (CONF_CAPCODES, CONF_VEHICLES, CONF_INCLUDE_TEXT, CONF_EXCLUDE_TEXT)
+
+RADIUS_SELECTOR = selector.NumberSelector(
+    selector.NumberSelectorConfig(min=0, max=300, step=1, unit_of_measurement="km", mode=selector.NumberSelectorMode.BOX)
+)
+DISPLAY_SELECTOR = selector.SelectSelector(
+    selector.SelectSelectorConfig(options=[DISPLAY_TEXT, DISPLAY_PAGER], translation_key="display")
+)
 
 
 def _multi_selector(options: list[dict[str, str]]) -> selector.SelectSelector:
@@ -51,7 +65,7 @@ REGION_SELECTOR = _multi_selector(
     [{"value": key, "label": value} for key, value in sorted(REGIONS.items(), key=lambda kv: kv[1])]
 )
 DISCIPLINE_SELECTOR = _multi_selector([{"value": key, "label": value} for key, value in DISCIPLINES.items()])
-PRIORITY_SELECTOR = _multi_selector([{"value": value, "label": value} for value in PRIORITIES])
+PRIORITY_SELECTOR = _multi_selector([{"value": key, "label": label} for key, label in PRIORITIES.items()])
 
 
 def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
@@ -71,8 +85,11 @@ def _schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
         vol.Optional(CONF_DISCIPLINES, default=defaults.get(CONF_DISCIPLINES, [])): DISCIPLINE_SELECTOR,
         vol.Optional(CONF_PRIORITIES, default=defaults.get(CONF_PRIORITIES, [])): PRIORITY_SELECTOR,
         vol.Optional(CONF_CAPCODES, default=defaults.get(CONF_CAPCODES, "")): str,
+        vol.Optional(CONF_VEHICLES, default=defaults.get(CONF_VEHICLES, "")): str,
         vol.Optional(CONF_INCLUDE_TEXT, default=defaults.get(CONF_INCLUDE_TEXT, "")): str,
         vol.Optional(CONF_EXCLUDE_TEXT, default=defaults.get(CONF_EXCLUDE_TEXT, "")): str,
+        vol.Optional(CONF_RADIUS, default=defaults.get(CONF_RADIUS, 0)): RADIUS_SELECTOR,
+        vol.Optional(CONF_DISPLAY, default=defaults.get(CONF_DISPLAY, DISPLAY_TEXT)): DISPLAY_SELECTOR,
         vol.Optional(
             CONF_INCIDENT_WINDOW, default=defaults.get(CONF_INCIDENT_WINDOW, DEFAULT_INCIDENT_WINDOW)
         ): vol.All(vol.Coerce(int), vol.Range(min=60, max=1800)),
@@ -92,8 +109,11 @@ def _normalise(data: dict[str, Any]) -> dict[str, Any]:
         CONF_DISCIPLINES: [str(x) for x in data.get(CONF_DISCIPLINES, [])],
         CONF_PRIORITIES: [str(x).upper() for x in data.get(CONF_PRIORITIES, [])],
         CONF_CAPCODES: split(data.get(CONF_CAPCODES)),
+        CONF_VEHICLES: [normalize_vehicle(x) for x in split(data.get(CONF_VEHICLES))],
         CONF_INCLUDE_TEXT: split(data.get(CONF_INCLUDE_TEXT)),
         CONF_EXCLUDE_TEXT: split(data.get(CONF_EXCLUDE_TEXT)),
+        CONF_RADIUS: float(data.get(CONF_RADIUS) or 0),
+        CONF_DISPLAY: data.get(CONF_DISPLAY) if data.get(CONF_DISPLAY) in (DISPLAY_TEXT, DISPLAY_PAGER) else DISPLAY_TEXT,
         CONF_INCIDENT_WINDOW: int(data.get(CONF_INCIDENT_WINDOW, DEFAULT_INCIDENT_WINDOW)),
     }
 

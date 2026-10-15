@@ -33,7 +33,11 @@ from .const import (
     CONF_ALL_SERVICES,
     CONF_CAPCODES,
     CONF_DISCIPLINES,
+    CONF_DISPLAY,
     CONF_ENTITY_KEY,
+    CONF_RADIUS,
+    CONF_VEHICLES,
+    DISPLAY_TEXT,
     CONF_EXCLUDE_TEXT,
     CONF_INCIDENT_WINDOW,
     CONF_INCLUDE_TEXT,
@@ -134,24 +138,29 @@ def sensor_settings(data: Mapping[str, Any], title: str) -> dict[str, Any]:
         CONF_DISCIPLINES: data.get(CONF_DISCIPLINES, []),
         CONF_PRIORITIES: data.get(CONF_PRIORITIES, []),
         CONF_CAPCODES: data.get(CONF_CAPCODES, []),
+        CONF_VEHICLES: data.get(CONF_VEHICLES, []),
         CONF_INCLUDE_TEXT: data.get(CONF_INCLUDE_TEXT, []),
         CONF_EXCLUDE_TEXT: data.get(CONF_EXCLUDE_TEXT, []),
+        CONF_RADIUS: float(data.get(CONF_RADIUS) or 0),
+        CONF_DISPLAY: data.get(CONF_DISPLAY, DISPLAY_TEXT),
         CONF_INCIDENT_WINDOW: int(data.get(CONF_INCIDENT_WINDOW, DEFAULT_INCIDENT_WINDOW)),
     }
 
 
 def _api_filter(settings: dict[str, Any]) -> dict[str, Any]:
-    # 'Toon alle meldingen' ignores region/service/priority/capcode filters, as
-    # the UI describes; the text filters keep applying.
+    # 'Toon alle meldingen' ignores region/service/priority/capcode/vehicle
+    # filters, as the UI describes; the text and radius filters keep applying.
     api_filter = {
         "include_text": settings[CONF_INCLUDE_TEXT],
         "exclude_text": settings[CONF_EXCLUDE_TEXT],
+        "radius_km": settings[CONF_RADIUS],
     }
     if not settings[CONF_ALL_SERVICES]:
         api_filter |= {
             "regios": settings[CONF_REGIONS],
             "diensten": settings[CONF_DISCIPLINES],
             "capcodes": settings[CONF_CAPCODES],
+            "vehicles": settings[CONF_VEHICLES],
             "priorities": settings[CONF_PRIORITIES],
         }
     return api_filter
