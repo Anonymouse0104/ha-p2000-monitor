@@ -31,6 +31,7 @@ from .const import (
     ATTR_TEST_REGION,
     ATTR_TEST_REGION_NAME,
     CONF_ALL_SERVICES,
+    CONF_BRANDBASE,
     CONF_CAPCODES,
     CONF_DISCIPLINES,
     CONF_DISPLAY,
@@ -54,6 +55,7 @@ from .const import (
     STORAGE_VERSION,
     SUBENTRY_SENSOR,
 )
+from .brandbase import BrandbaseVehicles
 from .coordinator import REGIONS, P2000FeedCoordinator, P2000FilterProcessor, storage_key
 
 _LOGGER = logging.getLogger(__name__)
@@ -179,6 +181,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: P2000ConfigEntry) -> boo
         return True
 
     feed = await _async_get_feed(hass)
+    vehicle_db: BrandbaseVehicles | None = None
+    if entry.options.get(CONF_BRANDBASE, True):
+        vehicle_db = BrandbaseVehicles(hass)
+        await vehicle_db.async_load()
+        entry.async_on_unload(vehicle_db.async_stop)
     processors: dict[str, P2000FilterProcessor] = {}
     for subentry_id, subentry in entry.subentries.items():
         if subentry.subentry_type != SUBENTRY_SENSOR:
@@ -192,6 +199,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: P2000ConfigEntry) -> boo
             subentry_id=subentry_id,
             incident_window=settings[CONF_INCIDENT_WINDOW],
             api_filter=_api_filter(settings),
+            vehicle_db=vehicle_db,
         )
         await processor.async_start()
         entry.async_on_unload(processor.async_stop)

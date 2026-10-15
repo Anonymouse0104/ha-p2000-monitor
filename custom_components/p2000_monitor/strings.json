@@ -113,5 +113,18 @@
         "pager": "Pager text (P 1 BR woning …)"
       }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "P2000 Monitor options",
+        "data": {
+          "brandbase": "Look up vehicle names on Brandbase"
+        },
+        "data_description": {
+          "brandbase": "For fire brigade alerts, looks up the type and post of the alerted vehicles (for example 24-0733 → Tankautospuit, Regionaal) on brandbase.hetbrandweerforum.nl. Only regions you receive alerts for, at most once a week."
+        }
+      }
+    }
   }
 }

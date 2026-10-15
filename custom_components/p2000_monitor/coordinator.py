@@ -395,8 +395,11 @@ class P2000FilterProcessor:
         incident_window=DEFAULT_INCIDENT_WINDOW,
         api_filter=None,
         match_any_unit: bool = False,
+        vehicle_db=None,
     ) -> None:
         self.match_any_unit = match_any_unit
+        # Optional Brandbase lookup that adds names to fire vehicles.
+        self.vehicle_db = vehicle_db
         self.hass = hass
         self.feed = feed
         self.storage_id = storage_id
@@ -430,14 +433,26 @@ class P2000FilterProcessor:
         self._store = Store(hass, STORAGE_VERSION, storage_key(storage_id))
         self._listeners: list[Callable[[], None]] = []
         self._unsub_feed: Callable[[], None] | None = None
+        self._unsub_vehicles: Callable[[], None] | None = None
         self._last_feed_data: dict[str, Any] | None = None
 
     async def async_start(self) -> None:
         """Load stored incidents, build the initial view and follow the feed."""
         await self.async_load_incident_history()
+        if self.vehicle_db:
+            # Before the first _apply: that may start a lookup which can finish
+            # immediately (tasks start eagerly), and its result must reach us.
+            self._unsub_vehicles = self.vehicle_db.async_add_listener(self._handle_vehicle_names)
         self._last_feed_data = self.feed.data
         self._apply(self.feed.data or {}, process_new=False)
         self._unsub_feed = self.feed.async_add_listener(self._handle_feed_update)
+
+    @callback
+    def _handle_vehicle_names(self) -> None:
+        """Brandbase delivered a region: name the vehicles of stored alerts too."""
+        for message in self._history.values():
+            self.vehicle_db.enrich(message)
+        self._notify()
 
     async def async_stop(self) -> None:
         """Stop following the feed and write any pending history right away.
@@ -448,6 +463,9 @@ class P2000FilterProcessor:
         if self._unsub_feed:
             self._unsub_feed()
             self._unsub_feed = None
+        if self._unsub_vehicles:
+            self._unsub_vehicles()
+            self._unsub_vehicles = None
         await self._store.async_save(self._data_to_save())
 
     @callback
@@ -501,6 +519,10 @@ class P2000FilterProcessor:
     @callback
     def _apply(self, feed_data: dict[str, Any], process_new: bool) -> None:
         accepted = [m for m in feed_data.get("messages") or [] if self._accepts(m)]
+        if self.vehicle_db:
+            # Only accepted alerts, so Brandbase is asked only for regions you follow.
+            for message in accepted:
+                self.vehicle_db.enrich(message)
         new_messages = [m for m in feed_data.get("new_messages") or [] if self._accepts(m)] if process_new else []
         _LOGGER.debug("P2000 after local filters: %s messages (from %s)", len(accepted), len(feed_data.get("messages") or []))
         history_changed = self._merge_history(accepted)
