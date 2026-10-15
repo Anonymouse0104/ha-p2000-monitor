@@ -84,16 +84,6 @@ Fire brigade pager texts end with the call signs of the alerted units (`243231` 
 
 Before 0.8, every sensor was a separate integration entry. On the first start of 0.8 these are merged automatically into one **P2000 Monitor** entry with one sensor per old entry. Entity IDs, history and stored alerts are kept, so dashboards and automations keep working.
 
-## AlarmeringDroid region IDs
-
-The integration uses the IDs returned by the AlarmeringDroid API.
-
-| ID | Veiligheidsregio |
-|---:|---|
-| 15 | Limburg-Noord |
-| 21 | Zuid-Limburg |
-| 23 | Twente |
-
 ## Services
 
 | ID | Service |
