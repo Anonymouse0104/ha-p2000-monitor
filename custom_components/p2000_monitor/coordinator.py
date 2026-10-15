@@ -6,9 +6,11 @@ from collections import deque
 from collections.abc import Callable
 from datetime import datetime, timedelta
 import hashlib
+import json
 import logging
 import re
 from typing import Any
+from urllib.parse import quote
 
 import aiohttp
 from homeassistant.core import HomeAssistant, callback
@@ -134,6 +136,39 @@ def _message_capcodes(message: dict[str, Any]) -> set[str]:
     return codes
 
 
+# Police alerts carry a police unit ("Eenheid Limburg") instead of a
+# veiligheidsregio, under the id of one of its regions (Limburg = 21). Map each
+# unit to all veiligheidsregio's it covers, so region filters work for police.
+POLICE_UNITS = {
+    "noord-nederland": ["2", "7", "12"],
+    "oost-nederland": ["3", "8", "13", "17", "23"],
+    "midden-nederland": ["18", "19", "27"],
+    "noord-holland": ["4", "9", "24"],
+    "amsterdam": ["1"],
+    "den haag": ["5", "25"],
+    "rotterdam": ["10", "14"],
+    "zeeland-west-brabant": ["20", "26"],
+    "oost-brabant": ["6", "11"],
+    "limburg": ["15", "21"],
+}
+
+
+def police_unit_regions(region_text: str) -> list[str] | None:
+    """Veiligheidsregio ids covered by a police unit name, or None if not a unit."""
+    text = region_text.strip().lower()
+    if not text.startswith("eenheid"):
+        return None
+    return POLICE_UNITS.get(text.removeprefix("eenheid").strip())
+
+
+def message_regions(message: dict[str, Any]) -> set[str]:
+    """All veiligheidsregio ids an alert belongs to (several for police units)."""
+    regions = set(message.get("regions") or [])
+    if message.get("regio"):
+        regions.add(str(message["regio"]))
+    return regions
+
+
 def _region_id(item: dict[str, Any]) -> str:
     raw = item.get("regioid", item.get("regio_id", item.get("region_id"),))
     if raw is None:
@@ -233,6 +268,8 @@ def normalize_api_message(item: dict[str, Any]) -> dict[str, Any] | None:
     capcodes = _capcodes(item)
     pager_text = _as_text(item.get("melding")) or message
     priority, urgency = parse_priority(pager_text, item.get("prio1"))
+    region_text = _as_text(item.get("regio_name") or item.get("region_name") or item.get("regio"))
+    unit_regions = police_unit_regions(region_text)
     result = {
         "api_id": _as_text(item.get("id")),
         "message": message,
@@ -249,7 +286,9 @@ def normalize_api_message(item: dict[str, Any]) -> dict[str, Any] | None:
         "capcode": capcodes[0] if capcodes else "",
         "capcodes": capcodes,
         "regio": region,
-        "regio_name": REGIONS.get(region, _as_text(item.get("regio_name") or item.get("region_name") or item.get("regio"))),
+        # Police units keep their own name ("Eenheid Limburg"), not a region's.
+        "regio_name": region_text if unit_regions else REGIONS.get(region, region_text),
+        "regions": unit_regions or ([region] if region else []),
         "discipline": SERVICES.get(service_id, _as_text(item.get("discipline") or item.get("dienst"))),
         "dienstid": service_id,
         "latitude": item.get("latitude", item.get("lat", "")),
@@ -301,10 +340,19 @@ class P2000FeedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._seen_order.append(message_id)
         self._seen_ids.add(message_id)
 
-    async def _fetch_api(self) -> list[dict[str, Any]]:
+    async def async_fetch_recent(self, query: dict[str, list[str]]) -> list[dict[str, Any]]:
+        """The latest ~30 alerts matching an API-side filter, however old.
+
+        The API accepts a JSON filter with 'regios', 'diensten' and 'capcodes'
+        appended to the URL. Used to fill a sensor's history at startup.
+        """
+        payload = json.dumps({k: [str(x) for x in v] for k, v in query.items() if v}, separators=(",", ":"))
+        return await self._fetch_api(API_URL + quote(payload, safe=""))
+
+    async def _fetch_api(self, url: str = API_URL) -> list[dict[str, Any]]:
         headers = {"User-Agent": "P2000-Monitor Home Assistant", "Accept": "application/json, text/plain, */*"}
         session = async_get_clientsession(self.hass)
-        async with session.get(API_URL, headers=headers, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)) as response:
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)) as response:
             response.raise_for_status()
             raw = await response.json(content_type=None)
         if isinstance(raw, list):
@@ -437,6 +485,8 @@ class P2000FilterProcessor:
         self._unsub_feed: Callable[[], None] | None = None
         self._unsub_vehicles: Callable[[], None] | None = None
         self._last_feed_data: dict[str, Any] | None = None
+        self._backfill_task: asyncio.Task | None = None
+        self._history_loaded = False
 
     async def async_start(self) -> None:
         """Load stored incidents, build the initial view and follow the feed."""
@@ -448,6 +498,50 @@ class P2000FilterProcessor:
         self._last_feed_data = self.feed.data
         self._apply(self.feed.data or {}, process_new=False)
         self._unsub_feed = self.feed.async_add_listener(self._handle_feed_update)
+        if query := self._backfill_query():
+            self._backfill_task = self.hass.async_create_background_task(
+                self._async_backfill(query), f"p2000_monitor backfill {self.storage_id}"
+            )
+
+    def _backfill_query(self) -> dict[str, list[str]] | None:
+        """API-side filter for this sensor's latest alerts, or None if not useful.
+
+        Without region/service/capcode filters the live feed already holds the
+        newest alerts. Police units are filed under one of their regions, so
+        all regions of a selected unit are asked for; local filters narrow it.
+        """
+        f = self._filters
+        regions = set(f["regions"])
+        for unit in POLICE_UNITS.values():
+            if regions & set(unit):
+                regions |= set(unit)
+        query = {"regios": sorted(regions), "diensten": sorted(f["services"])}
+        if f["capcodes"] and not (self.match_any_unit and f["vehicles"]):
+            # A watch on capcodes OR vehicles cannot be expressed in the API.
+            query["capcodes"] = sorted(f["capcodes"])
+        return query if any(query.values()) else None
+
+    async def _async_backfill(self, query: dict[str, list[str]]) -> None:
+        """Fill the history with the latest matching alerts, however old.
+
+        The live feed only covers the last ~30 national alerts, so a sensor for
+        a quiet region would otherwise stay empty after a restart or when it is
+        created. Backfilled alerts are not new: they fire no events.
+        """
+        try:
+            messages = await self.feed.async_fetch_recent(query)
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            _LOGGER.debug("P2000 backfill for %s failed: %s", self.storage_id, err)
+            return
+        accepted = [m for m in messages if self._accepts(m)]
+        if self.vehicle_db:
+            for message in accepted:
+                self.vehicle_db.enrich(message)
+        if self._merge_history(accepted):
+            self._store.async_delay_save(self._data_to_save, 10)
+            history = list(self._history.values())
+            self.data = {**self.data, "latest": history[0], "messages": history, "new_messages": [], "incident_changes": []}
+            self._notify()
 
     @callback
     def _handle_vehicle_names(self) -> None:
@@ -468,7 +562,12 @@ class P2000FilterProcessor:
         if self._unsub_vehicles:
             self._unsub_vehicles()
             self._unsub_vehicles = None
-        await self._store.async_save(self._data_to_save())
+        if self._backfill_task:
+            self._backfill_task.cancel()
+            self._backfill_task = None
+        # Never overwrite stored history with an empty one after a failed load.
+        if self._history_loaded:
+            await self._store.async_save(self._data_to_save())
 
     @callback
     def async_add_listener(self, update_callback: Callable[[], None]) -> Callable[[], None]:
@@ -564,6 +663,7 @@ class P2000FilterProcessor:
         except Exception as err:
             _LOGGER.warning("Kon opgeslagen P2000-historie niet laden: %s", err)
             return
+        self._history_loaded = True
         for raw in (stored or {}).get("incidents", []):
             if not isinstance(raw, dict) or raw.get("test"):
                 continue
@@ -600,7 +700,7 @@ class P2000FilterProcessor:
         together form one OR filter: either alerting the unit is enough.
         """
         f = self._filters
-        if f["regions"] and str(message.get("regio", "")) not in f["regions"]:
+        if f["regions"] and not (message_regions(message) & f["regions"]):
             return False
         if f["services"] and str(message.get("dienstid", "")) not in f["services"]:
             return False
