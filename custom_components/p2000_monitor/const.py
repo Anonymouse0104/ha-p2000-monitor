@@ -39,7 +39,15 @@ DATA_MIGRATION_LOCK = f"{DOMAIN}_migration_lock"
 
 from datetime import timedelta
 
-DEFAULT_SCAN_INTERVAL = 10
+# Seconds between polls of the national feed, shared by all sensors and
+# configurable in the integration options. Every installation polls the same
+# third-party beta API, so keep this modest. Longer intervals cannot miss alerts:
+# the feed holds the latest ~30 national alerts (usually 20+ minutes) and every
+# id in it is deduplicated, so each poll sees everything since the previous one.
+CONF_SCAN_INTERVAL = "scan_interval"
+DEFAULT_SCAN_INTERVAL = 30
+MIN_SCAN_INTERVAL = 30
+MAX_SCAN_INTERVAL = 300
 # Poll interval doubles per failed update up to this while the API is down.
 MAX_BACKOFF = timedelta(minutes=5)
 # Sensors stay available with their last data for this long after the last

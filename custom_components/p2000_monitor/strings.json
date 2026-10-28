@@ -166,10 +166,12 @@
       "init": {
         "title": "P2000 Monitor options",
         "data": {
-          "brandbase": "Look up vehicle names on Brandbase"
+          "brandbase": "Look up vehicle names on Brandbase",
+          "scan_interval": "Poll interval (seconds)"
         },
         "data_description": {
-          "brandbase": "For fire brigade alerts, looks up the type and post of the alerted vehicles (for example 24-0733 → Tankautospuit, Regionaal) on brandbase.hetbrandweerforum.nl. Only regions you receive alerts for, at most once a week."
+          "brandbase": "For fire brigade alerts, looks up the type and post of the alerted vehicles (for example 24-0733 → Tankautospuit, Regionaal) on brandbase.hetbrandweerforum.nl. Only regions you receive alerts for, at most once a week.",
+          "scan_interval": "How often the national P2000 feed is fetched, shared by all sensors (30–300 s). Longer does not miss alerts: the feed holds the latest ~30 alerts, usually well over 20 minutes."
         }
       }
     }

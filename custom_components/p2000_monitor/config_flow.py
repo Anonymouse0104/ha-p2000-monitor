@@ -24,6 +24,10 @@ from .const import (
     CONF_ALL_SERVICES,
     CONF_BRANDBASE,
     CONF_CAPCODES,
+    CONF_SCAN_INTERVAL,
+    DEFAULT_SCAN_INTERVAL,
+    MAX_SCAN_INTERVAL,
+    MIN_SCAN_INTERVAL,
     CONF_DISCIPLINES,
     CONF_DISPLAY,
     CONF_EXCLUDE_TEXT,
@@ -165,6 +169,19 @@ class P2000OptionsFlow(OptionsFlow):
             step_id="init",
             data_schema=vol.Schema({
                 vol.Optional(CONF_BRANDBASE, default=self.config_entry.options.get(CONF_BRANDBASE, True)): bool,
+                vol.Optional(
+                    CONF_SCAN_INTERVAL,
+                    default=self.config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+                ): vol.All(
+                    selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL, step=5,
+                            unit_of_measurement="s", mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+                ),
             }),
         )
 

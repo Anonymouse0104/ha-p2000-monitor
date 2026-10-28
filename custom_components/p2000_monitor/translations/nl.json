@@ -166,10 +166,12 @@
       "init": {
         "title": "P2000 Monitor-opties",
         "data": {
-          "brandbase": "Voertuignamen ophalen van Brandbase"
+          "brandbase": "Voertuignamen ophalen van Brandbase",
+          "scan_interval": "Poll-interval (seconden)"
         },
         "data_description": {
-          "brandbase": "Zoekt bij brandweermeldingen het type en de post van de gealarmeerde voertuigen op (bijvoorbeeld 24-0733 → Tankautospuit, Regionaal) via brandbase.hetbrandweerforum.nl. Alleen regio's waarvan je meldingen ontvangt, hooguit één keer per week."
+          "brandbase": "Zoekt bij brandweermeldingen het type en de post van de gealarmeerde voertuigen op (bijvoorbeeld 24-0733 → Tankautospuit, Regionaal) via brandbase.hetbrandweerforum.nl. Alleen regio's waarvan je meldingen ontvangt, hooguit één keer per week.",
+          "scan_interval": "Hoe vaak de landelijke P2000-feed wordt opgehaald, voor alle sensoren samen (30–300 s). Langer mist geen meldingen: de feed bevat de laatste ~30 meldingen, meestal ruim 20 minuten."
         }
       }
     }

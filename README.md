@@ -12,7 +12,7 @@ Live Dutch P2000 emergency alerts in Home Assistant, from the structured **Alarm
 - **Map** — alerts with a location from the last hour appear on the standard map card.
 - **Vehicles named** — call signs in fire brigade pager texts (24-0733) are shown with type and post from [Brandbase](https://brandbase.hetbrandweerforum.nl/) (can be switched off).
 - **Pager text or alert text** — choose per sensor: `P 1 BR woning Rijksweg Echt` or `Brandweer met spoed naar Rijksweg, Echt`.
-- **One poll for everything** — the national feed is fetched once every 10 seconds, however many sensors you have.
+- **One poll for everything** — the national feed is fetched once every 30 seconds (adjustable from 30 to 300 under **P2000 Monitor → Configure**), however many sensors you have. A longer interval misses nothing: the feed holds the latest ~30 national alerts and every alert is deduplicated.
 - **No missed or duplicate alerts** — every alert is deduplicated on its AlarmeringDroid id and fires exactly one event; each sensor keeps its last 100 alerts across restarts.
 
 ## Installation
@@ -79,6 +79,15 @@ Click an alert to see the pager text, the alerted vehicles (with Brandbase names
 ## Vehicle names (Brandbase)
 
 Fire brigade pager texts end with the call signs of the alerted units (`243231` → `24-3231`). P2000 Monitor looks these up on [Brandbase](https://brandbase.hetbrandweerforum.nl/) to show the vehicle type and post. To keep the load on this volunteer-run site minimal it only fetches regions that appear in alerts your sensors accept, each at most once a week, one page at a time with 15 seconds in between, and caches the result. Switch it off under **P2000 Monitor → Configure**. Corrections to vehicle data go to the Brandbase editors.
+
+## Integration options
+
+Under **Settings → Devices & services → P2000 Monitor → Configure**:
+
+| Option | Default | Meaning |
+|---|---|---|
+| **Poll interval** | 30 s | How often the national feed is fetched, for all sensors together (30–300 s). The AlarmeringDroid API is a free third-party service; please keep this modest. |
+| **Look up vehicle names on Brandbase** | on | See [Vehicle names](#vehicle-names-brandbase) above. |
 
 ## Upgrading from 0.7 or older
 

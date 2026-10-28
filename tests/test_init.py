@@ -4,7 +4,8 @@ import re
 import aiohttp
 from homeassistant.config_entries import SOURCE_RECONFIGURE, SOURCE_USER, ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, InvalidData
+import pytest
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
@@ -297,11 +298,31 @@ async def test_failure_backoff_and_availability(hass, aioclient_mock):
     e = hub(sensor("A"))
     await setup(hass, aioclient_mock, e)
     feed_coord = hass.data[DATA_FEED]
+    assert feed_coord.update_interval == timedelta(seconds=30)  # default
     await poll(hass, aioclient_mock, None, exc=TimeoutError())
-    assert feed_coord.update_interval == timedelta(seconds=20)
+    assert feed_coord.update_interval == timedelta(seconds=60)
     assert hass.states.get("sensor.a").state != "unavailable"
     await poll(hass, aioclient_mock, feed(item(100, "P 1 BR woning Echt", ["1005258"])))
-    assert feed_coord.update_interval == timedelta(seconds=10)
+    assert feed_coord.update_interval == timedelta(seconds=30)
+
+
+async def test_poll_interval_option(hass, aioclient_mock):
+    e = hub(sensor("A"))
+    await setup(hass, aioclient_mock, e)
+    result = await hass.config_entries.options.async_init(e.entry_id)
+    # Below the minimum is refused.
+    with pytest.raises(InvalidData):
+        await hass.config_entries.options.async_configure(result["flow_id"], {"brandbase": False, "scan_interval": 10})
+    await hass.config_entries.options.async_configure(result["flow_id"], {"brandbase": False, "scan_interval": 120})
+    await hass.async_block_till_done()
+    assert e.options["scan_interval"] == 120
+    feed_coord = hass.data[DATA_FEED]
+    assert feed_coord.update_interval == timedelta(seconds=120)
+    # Backoff during an outage starts from and resets to the configured value.
+    await poll(hass, aioclient_mock, None, exc=TimeoutError())
+    assert feed_coord.update_interval == timedelta(seconds=240)
+    await poll(hass, aioclient_mock, feed(item(100, "P 1 BR woning Echt", ["1005258"])))
+    assert feed_coord.update_interval == timedelta(seconds=120)
 
 
 async def test_attributes_and_long_state(hass, aioclient_mock):

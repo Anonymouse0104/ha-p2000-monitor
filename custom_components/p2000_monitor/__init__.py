@@ -48,13 +48,17 @@ from .const import (
     CONF_INCLUDE_TEXT,
     CONF_PRIORITIES,
     CONF_REGIONS,
+    CONF_SCAN_INTERVAL,
     CONF_STORAGE_ID,
     DATA_FEED,
     DATA_MIGRATION_LOCK,
     DEFAULT_INCIDENT_WINDOW,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     EVENT_NEW_MESSAGE,
     HUB_TITLE,
+    MAX_SCAN_INTERVAL,
+    MIN_SCAN_INTERVAL,
     SERVICE_INJECT_TEST_INCIDENT,
     STORAGE_VERSION,
     SUBENTRY_SENSOR,
@@ -134,11 +138,13 @@ async def _async_register_card(hass: HomeAssistant) -> None:
         add_extra_js_url(hass, f"{CARD_URL}?v={version}")
 
 
-async def _async_get_feed(hass: HomeAssistant) -> P2000FeedCoordinator:
+async def _async_get_feed(hass: HomeAssistant, scan_interval: int) -> P2000FeedCoordinator:
     """Return the shared feed coordinator, fetching it once."""
     feed: P2000FeedCoordinator | None = hass.data.get(DATA_FEED)
     if feed is None:
-        feed = hass.data[DATA_FEED] = P2000FeedCoordinator(hass)
+        feed = hass.data[DATA_FEED] = P2000FeedCoordinator(hass, scan_interval)
+    else:
+        feed.async_set_scan_interval(scan_interval)
     async with feed.setup_lock:
         if feed.data is None:
             await feed.async_refresh()
@@ -200,7 +206,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: P2000ConfigEntry) -> boo
         hass.async_create_task(hass.config_entries.async_remove(entry.entry_id))
         return True
 
-    feed = await _async_get_feed(hass)
+    scan_interval = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
+    feed = await _async_get_feed(hass, max(MIN_SCAN_INTERVAL, min(MAX_SCAN_INTERVAL, scan_interval)))
     vehicle_db: BrandbaseVehicles | None = None
     if entry.options.get(CONF_BRANDBASE, True):
         vehicle_db = BrandbaseVehicles(hass)

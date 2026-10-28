@@ -327,7 +327,9 @@ class P2000FeedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     so adding sensors never adds API requests.
     """
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, scan_interval: int = DEFAULT_SCAN_INTERVAL) -> None:
+        # Base interval; backoff during outages starts from it and resets to it.
+        self.scan_interval = timedelta(seconds=scan_interval)
         self._seen_ids: set[str] = set()
         self._seen_order: deque[str] = deque()
         self._initialized = False
@@ -338,8 +340,14 @@ class P2000FeedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER,
             config_entry=None,
             name=DOMAIN,
-            update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
+            update_interval=self.scan_interval,
         )
+
+    @callback
+    def async_set_scan_interval(self, seconds: int) -> None:
+        """Apply the configured poll interval (from the integration options)."""
+        self.scan_interval = timedelta(seconds=seconds)
+        self.update_interval = self.scan_interval
 
     def _remember_message_id(self, message_id: str) -> None:
         if not message_id or message_id in self._seen_ids:
@@ -398,9 +406,9 @@ class P2000FeedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             # Back off while the API is down; the coordinator itself logs the
             # failure once and the recovery once, so no traceback per poll.
-            self.update_interval = min(self.update_interval * 2, MAX_BACKOFF)
+            self.update_interval = max(min(self.update_interval * 2, MAX_BACKOFF), self.scan_interval)
             raise UpdateFailed(f"AlarmeringDroid API update mislukt: {err!r}") from err
-        self.update_interval = timedelta(seconds=DEFAULT_SCAN_INTERVAL)
+        self.update_interval = self.scan_interval
         self.last_success_time = dt_util.utcnow()
         messages.sort(key=message_sort_key, reverse=True)
         new_messages = self._detect_new(messages)
