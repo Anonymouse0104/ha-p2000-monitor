@@ -31,6 +31,14 @@ POLICE_CAPCODES = {
 _POLICE_DESCRIPTION = re.compile(r"\b(politie|persinfo|persalarm)\b", re.IGNORECASE)
 
 
+# Only ambulances start a pager text with A1/A2/B1/B2 (a bare "B" is too vague).
+_AMBULANCE_PAGER = re.compile(r"^\s*[AB]\s*[12]\b", re.IGNORECASE)
+
+
+def is_ambulance_pager(pager_text: str) -> bool:
+    return bool(_AMBULANCE_PAGER.match(pager_text or ""))
+
+
 def is_police_alert(capcodes: list[str], details: list[dict[str, str]]) -> bool:
     """True when every capcode of an alert belongs to the police."""
     if not capcodes:

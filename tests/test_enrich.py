@@ -57,6 +57,24 @@ def test_misfiled_police_press_alarm_becomes_police():
     assert fire["dienstid"] == "2" and fire["vehicles"] == [{"id": "24-2131"}]
 
 
+def test_misfiled_ambulance_becomes_ambulance():
+    # Real feed item 26270066: filed as fire, region Amsterdam, no capcodes,
+    # with a generated fire text; P2Kflex shows capcode 1023193 Ambulance 24-113.
+    message = normalize_api_message({
+        "id": "26270066", "melding": "A1 Prinses Christinastraat Echt 99369",
+        "tekstmelding": "Brandweer met spoed naar Prinses Christinastraat, Echt, voor een overigen",
+        "dienstid": "2", "regioid": "1", "regio": "Amsterdam-Amstelland", "datum": "28-10", "tijd": "20:12",
+        "prio1": "1", "capcodes": [],
+    })
+    assert message["dienstid"] == "3" and message["discipline"] == "Ambulancediensten"
+    assert message["message"] == "A1 Prinses Christinastraat Echt 99369"
+    assert message["vehicles"] == []  # 99369 is a ride number, not a unit
+    for pager in ("P 1 BR woning Echt 243231", "BR container Echt", "BDH-01 Liftopsluiting"):
+        fire = normalize_api_message({"id": "2", "melding": pager, "tekstmelding": "Brandweer", "dienstid": "2",
+                                      "regioid": "21", "datum": "28-10", "tijd": "20:12", "capcodes": []})
+        assert fire["dienstid"] == "2", pager
+
+
 def test_normalize_api_message_enriches():
     message = normalize_api_message({
         "id": "26202451", "melding": "A1 AMBU 17103 Peperdonk 3206CB Spijkenisse SPIJKN bon 159921",

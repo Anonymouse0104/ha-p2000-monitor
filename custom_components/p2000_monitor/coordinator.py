@@ -20,10 +20,13 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .enrich import (
+    SERVICE_AMBULANCE,
+    SERVICE_FIRE,
     SERVICE_POLICE,
     capcode_details,
     distance_km,
     extract_vehicles,
+    is_ambulance_pager,
     is_police_alert,
     normalize_vehicle,
     parse_priority,
@@ -278,6 +281,11 @@ def normalize_api_message(item: dict[str, Any]) -> dict[str, Any] | None:
         # brigade): use the police service and the real pager text instead of
         # the generated "Brandweer met ... spoed naar ..." text.
         service_id = SERVICE_POLICE
+        message = pager_text
+    elif service_id == SERVICE_FIRE and is_ambulance_pager(pager_text):
+        # Misfiled ambulance alert (e.g. Westelijke Mijnstreek, capcode 1023193,
+        # comes through as fire without capcodes): same correction.
+        service_id = SERVICE_AMBULANCE
         message = pager_text
     result = {
         "api_id": _as_text(item.get("id")),
