@@ -34,6 +34,32 @@ _POLICE_DESCRIPTION = re.compile(r"\b(politie|persinfo|persalarm)\b", re.IGNOREC
 # Only ambulances start a pager text with A1/A2/B1/B2 (a bare "B" is too vague).
 _AMBULANCE_PAGER = re.compile(r"^\s*[AB]\s*[12]\b", re.IGNORECASE)
 
+# UTF-8 read as Windows-1252: "Ã¶" for "ö", "â€™" for "’".
+_MOJIBAKE = re.compile("[ÃÂ]|â€")
+
+
+def fix_mojibake(text: str | None) -> str | None:
+    """Undo UTF-8 text that was decoded as Windows-1252/Latin-1; leave other text alone."""
+    if not text or not _MOJIBAKE.search(text):
+        return text
+    for codec in ("cp1252", "latin-1"):
+        try:
+            return text.encode(codec).decode("utf-8")
+        except UnicodeError:
+            continue
+    return text
+
+
+def fix_mojibake_deep(value: Any) -> Any:
+    """fix_mojibake on every string in nested dicts and lists (an API item, a stored alert)."""
+    if isinstance(value, str):
+        return fix_mojibake(value)
+    if isinstance(value, dict):
+        return {key: fix_mojibake_deep(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [fix_mojibake_deep(item) for item in value]
+    return value
+
 
 def is_ambulance_pager(pager_text: str) -> bool:
     return bool(_AMBULANCE_PAGER.match(pager_text or ""))

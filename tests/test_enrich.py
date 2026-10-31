@@ -4,6 +4,8 @@ from custom_components.p2000_monitor.enrich import (
     capcode_details,
     distance_km,
     extract_vehicles,
+    fix_mojibake,
+    fix_mojibake_deep,
     normalize_vehicle,
     parse_priority,
 )
@@ -87,3 +89,24 @@ def test_normalize_api_message_enriches():
     assert (message["priority"], message["urgency"]) == ("A1", 1)
     assert message["vehicles"] == [{"id": "17-103"}]
     assert message["capcode_details"][0]["description"] == "Ambulance 17-103 / VRR - AZRR"
+
+
+def test_fix_mojibake_repairs_utf8_read_as_cp1252():
+    assert fix_mojibake("Calamiteiten CoÃ¶rdinator") == "Calamiteiten Coördinator"
+    assert fix_mojibake("Brandweerâ€™s") == "Brandweer’s"
+    assert fix_mojibake("CafÃ© Ã‰lysÃ©e") == "Café Élysée"
+    # "Á" is c3 81 in UTF-8; 0x81 has no cp1252 character, so Latin-1 handles it.
+    assert fix_mojibake("\u00c3\x81lvaro") == "\u00c1lvaro"
+
+
+def test_fix_mojibake_leaves_correct_text_alone():
+    for text in ("Coördinator", "beëindigen", "Café – test", "Brand 🚒🔥", "SÃO", "P 1 BR woning"):
+        assert fix_mojibake(text) == text
+    assert fix_mojibake(None) is None
+    assert fix_mojibake("") == ""
+
+
+def test_fix_mojibake_deep():
+    item = {"plaats": "SchÃ©rpenzeel", "capcodes": [{"omschrijving": "CoÃ¶rdinator", "capcode": 1}], "lat": 5.1}
+    assert fix_mojibake_deep(item) == {"plaats": "Schérpenzeel", "capcodes": [{"omschrijving": "Coördinator", "capcode": 1}], "lat": 5.1}
+    assert fix_mojibake_deep(None) is None

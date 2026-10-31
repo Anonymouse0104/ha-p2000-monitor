@@ -1,4 +1,5 @@
 ﻿from datetime import timedelta
+import json
 import re
 
 import aiohttp
@@ -15,7 +16,13 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.p2000_monitor.const import DATA_FEED, DOMAIN
-from custom_components.p2000_monitor.coordinator import API_URL, LOCAL_TZ, _published
+from custom_components.p2000_monitor.coordinator import (
+    API_URL,
+    LOCAL_TZ,
+    _published,
+    normalize_api_message,
+    storage_key,
+)
 
 BASE = {
     "dienstid": "2", "regioid": "21", "dienst": "Brandweer", "regio": "Zuid-Limburg",
@@ -426,6 +433,34 @@ async def test_service_registered(hass, aioclient_mock):
     await hass.async_block_till_done()
     assert len(new_incident) == 1
     assert hass.states.get("sensor.a").state.startswith("P 1 BR woning Teststraat")
+
+
+async def test_feed_without_charset_is_read_as_utf8(hass, aioclient_mock):
+    e = hub(sensor("A"))
+    await setup(hass, aioclient_mock, e)
+    new = async_capture_events(hass, "p2000_monitor_new_message")
+    payload = feed(item(200, "P 1 BR Coördinator Echt", ["1005258"], plaats="Sint Odiliënberg"))
+    payload["meldingen"][0]["capcodes"][0]["omschrijving"] = "Calamiteiten CoÃ¶rdinator"  # garbled by the source
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(BACKFILL_URL, json=feed())
+    # No charset in the header: the body must still be read as UTF-8.
+    aioclient_mock.get(API_URL, content=json.dumps(payload, ensure_ascii=False).encode(), headers={"Content-Type": "text/html"})
+    await hass.data[DATA_FEED].async_refresh()
+    await hass.async_block_till_done()
+    message = new[0].data["message"]
+    assert message["pager_text"] == "P 1 BR Coördinator Echt"
+    assert message["city"] == "Sint Odiliënberg"
+    assert message["capcode_details"][0]["description"] == "Calamiteiten Coördinator"
+
+
+async def test_stored_history_is_repaired_on_load(hass, aioclient_mock, hass_storage):
+    stored = normalize_api_message(item(50, "P 1 BR woning CoÃ¶rdinator Echt", ["1005258"]))
+    hass_storage[storage_key("hist1")] = {"version": 1, "minor_version": 1, "key": storage_key("hist1"),
+                                          "data": {"incidents": [], "messages": [stored]}}
+    e = hub(sensor("A", storage_id="hist1"))
+    await setup(hass, aioclient_mock, e)
+    history = by_name(e, "A")._history
+    assert history[stored["message_id"]]["pager_text"] == "P 1 BR woning Coördinator Echt"
 
 
 def test_published_parsing():

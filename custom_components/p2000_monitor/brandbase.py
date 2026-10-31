@@ -24,6 +24,8 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from .enrich import fix_mojibake_deep
+
 _LOGGER = logging.getLogger(__name__)
 
 BASE_URL = "https://brandbase.hetbrandweerforum.nl"
@@ -83,6 +85,8 @@ class BrandbaseVehicles:
     async def async_load(self) -> None:
         stored = await self._store.async_load()
         if isinstance(stored, dict):
+            # Repairs vehicle names cached by older versions.
+            stored = fix_mojibake_deep(stored)
             self._data = {"index": stored.get("index") or {}, "regions": stored.get("regions") or {}}
 
     @callback
@@ -133,7 +137,8 @@ class BrandbaseVehicles:
         session = async_get_clientsession(self.hass)
         async with session.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT) as response:
             response.raise_for_status()
-            return await response.text()
+            # Brandbase pages are UTF-8; don't let a missing charset pick another codec.
+            return (await response.read()).decode("utf-8", errors="replace")
 
     async def _run(self) -> None:
         """Fetch queued regions one by one, REQUEST_DELAY seconds apart."""

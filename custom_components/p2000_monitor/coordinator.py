@@ -26,6 +26,7 @@ from .enrich import (
     capcode_details,
     distance_km,
     extract_vehicles,
+    fix_mojibake_deep,
     is_ambulance_pager,
     is_police_alert,
     normalize_vehicle,
@@ -379,7 +380,15 @@ class P2000FeedCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         session = async_get_clientsession(self.hass)
         async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=API_TIMEOUT)) as response:
             response.raise_for_status()
-            raw = await response.json(content_type=None)
+            # The API sends UTF-8; decode the bytes ourselves instead of trusting the header.
+            body = await response.read()
+        try:
+            text = body.decode("utf-8")
+        except UnicodeDecodeError:
+            _LOGGER.warning("AlarmeringDroid API sent invalid UTF-8; replacing the broken characters")
+            text = body.decode("utf-8", errors="replace")
+        # Some texts arrive already garbled ("CoÃ¶rdinator"); repair every field at once.
+        raw = fix_mojibake_deep(json.loads(text))
         if isinstance(raw, list):
             items = raw
         elif isinstance(raw, dict):
@@ -688,6 +697,8 @@ class P2000FilterProcessor:
         except Exception as err:
             _LOGGER.warning("Kon opgeslagen P2000-historie niet laden: %s", err)
             return
+        # History saved by older versions may hold garbled texts.
+        stored = fix_mojibake_deep(stored)
         self._history_loaded = True
         for raw in (stored or {}).get("incidents", []):
             if not isinstance(raw, dict) or raw.get("test"):
