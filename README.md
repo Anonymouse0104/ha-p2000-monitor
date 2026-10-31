@@ -4,6 +4,8 @@
 
 Live Dutch P2000 emergency alerts in Home Assistant, from the structured **AlarmeringDroid API**. Like [P2Kflex](https://live.p2kflex.nl/), you decide what you follow — entirely from the UI: your own sensors per region or service, alarms for your own capcodes or vehicles, and a live dashboard card.
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Anonymouse0104&repository=ha-p2000-monitor&category=integration) [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/anonymouse0501)
+
 ## Features
 
 - **Your own sensors** — add the integration once, then use **Add sensor** for every view you want: all of the Netherlands, your safety region, the fire brigade within 20 km of home, or one station by capcode.
